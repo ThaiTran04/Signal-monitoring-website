@@ -1,4 +1,4 @@
-from datetime import datetime, date as date_cls
+from datetime import datetime, timezone, date as date_cls
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -6,7 +6,6 @@ from app.database.db import get_db
 from app.models.models import Machine, IoHistory, User
 from app.schemas.schemas import IoHistoryResponse, IoSegment
 from app.services.auth import get_current_user
-from app.services import mock_data as md
 
 router = APIRouter(prefix="/api/machines", tags=["io"])
 
@@ -59,11 +58,26 @@ def get_io_history(
             if i + 1 < len(rows):
                 nxt = rows[i + 1]
                 end_min = nxt.timestamp.hour * 60 + nxt.timestamp.minute
+            elif date == datetime.now(timezone.utc).date().isoformat():
+                # Last known state for TODAY — only draw up to "now", not all
+                # the way to midnight. Time that hasn't happened yet has no
+                # real reading and shouldn't be colored in. UTC to match how
+                # timestamps are written in device.py (datetime.now(timezone.utc)).
+                now_utc = datetime.now(timezone.utc)
+                end_min = now_utc.hour * 60 + now_utc.minute
             else:
+                # Last known state for a past (already-finished) day — that
+                # day is over, so it really did run out the clock.
                 end_min = 1440
-            segments.append(IoSegment(start_min=start_min, end_min=end_min, status=r.state))
+            if end_min > start_min:
+                segments.append(IoSegment(start_min=start_min, end_min=end_min, status=r.state))
     else:
-        # No stored rows for this date (e.g. historical/mock date) -> deterministic mock fallback
-        segments = [IoSegment(**s) for s in md.get_segments(machine_id, date)]
+        # No stored rows for this date — the device hasn't reported anything
+        # for it (a day before the HMI started running, or a future date),
+        # so there's nothing real to draw. Empty list -> chart stays blank
+        # instead of fabricating a segment (even an "offline" one). Bars only
+        # appear once real IN1/IN2/IN3 beacon readings come in from the HMI
+        # via POST /api/device/update.
+        segments = []
 
     return IoHistoryResponse(machine_id=machine_id, date=date, segments=segments)
