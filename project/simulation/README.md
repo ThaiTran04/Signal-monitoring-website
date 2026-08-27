@@ -1,161 +1,74 @@
-# ESP32 Simulation
+# Full ESP32 Simulation
 
-This folder simulates the ESP32 telemetry layer of `Signal-monitoring-website`.
+This simulator is designed for the current `Signal-monitoring-website` backend/frontend.
 
-The real ESP32 firmware sends a JSON payload every second to:
+## What it does
 
-```text
-POST /api/device/update
-```
+- Creates 3 simulated ESP32 machines.
+- Seeds 3 calendar days of minute-by-minute `MachineStatus` and `IoHistory` into the existing backend SQLite database.
+- Uses the exact state cycle expected by the timeline:
+  - 1 minute `RUN` (green)
+  - 1 minute `ERROR` (red)
+  - 1 minute `STOP` (orange/yellow)
+  - repeat
+- Adds planned `OFFLINE` windows and reconnects on each day for each simulated machine.
+- Stores connection-history disconnect/reconnect events.
+- After history seeding, continues in realtime through the real `POST /api/device/update` endpoint, so the frontend/WebSocket path is exercised too.
+- Does not modify the real ESP32 firmware.
 
-The simulator sends the same payload structure expected by the current FastAPI
-`DeviceUpdatePayload` schema.
+## Run on Windows
 
-## Project integration
+Start FastAPI first so `project/backend/database/hmi.db` exists.
 
-Place this folder here:
-
-```text
-project/
-├── backend/
-├── frontend/
-├── esp32/
-└── simulation/
-    ├── simulator.py
-    ├── requirements.txt
-    └── README.md
-```
-
-The simulator does not change the real ESP32 firmware.
-
-## 1. Start Backend
-
-From the backend directory, start FastAPI using the command already used by
-this project. The default simulator URL is:
-
-```text
-http://127.0.0.1:8000
-```
-
-If your backend uses another host/port, pass it with `--url`.
-
-## 2. Install simulator dependency
-
-Windows:
+From `project\simulation`:
 
 ```powershell
-cd project\simulation
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe simulator.py
 ```
 
-Linux/macOS:
+This seeds the last 3 calendar days and then continues realtime with one API update per minute.
 
-```bash
-cd project/simulation
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+## Useful test modes
+
+Seed history only:
+
+```powershell
+.venv\Scripts\python.exe simulator.py --no-realtime
 ```
 
-## 3. Run continuously
+Realtime only:
 
-```bash
-python simulator.py
+```powershell
+.venv\Scripts\python.exe simulator.py --realtime-only
 ```
 
-Three simulated ESP32 devices will send telemetry once per second.
+Faster realtime visual test (10 seconds per API cycle; the state still follows the minute-based virtual clock):
 
-## 4. Run once
-
-Useful for checking whether the backend endpoint accepts the payload:
-
-```bash
-python simulator.py --once
+```powershell
+.venv\Scripts\python.exe simulator.py --interval 10
 ```
 
-## 5. Use another backend address
+Use another backend address:
 
-Example:
-
-```bash
-python simulator.py --url http://192.168.1.100:8000
+```powershell
+.venv\Scripts\python.exe simulator.py --url http://192.168.1.100:8000
 ```
 
-## Simulated devices
+Do not duplicate historical rows from a previous simulation run:
 
-The default simulator creates:
+```powershell
+.venv\Scripts\python.exe simulator.py
+```
 
-- `SIM_MACHINE_01`
-- `SIM_MACHINE_02`
-- `SIM_MACHINE_03`
+The default run clears only rows belonging to `SIM_MACHINE_01..03` before reseeding. It does not delete other machines.
 
-Each device has a unique MAC and IP.
-
-## Simulated machine states
-
-The simulator randomly changes states between:
-
-- `RUNNING`
-- `STOPPED`
-- `ERROR`
-- `OFFLINE`
-
-The IO values follow the same three-light logic used by the current ESP32:
+## Expected flow
 
 ```text
-RUNNING -> input3 = 1
-STOPPED -> input2 = 1
-ERROR   -> input1 = 1
-OFFLINE -> all inputs = 0
+3-day history -> SQLite backend -> Machine Detail timeline
+                              -> Connection History
+                              -> Dashboard summary
+
+then realtime -> POST /api/device/update -> FastAPI -> SQLite + WebSocket -> Frontend
 ```
-
-RSSI also changes slightly while the simulated device is online.
-
-## Payload
-
-The simulator sends this structure:
-
-```json
-{
-  "machine": "SIM_MACHINE_01",
-  "mac": "AA:BB:CC:DD:EE:01",
-  "ip": "192.168.1.201",
-  "rssi": 75,
-  "wifi_connected": true,
-  "server_connected": true,
-  "status": "RUNNING",
-  "io": {
-    "input1": 0,
-    "input2": 0,
-    "input3": 1,
-    "input4": 0
-  }
-}
-```
-
-This matches the current ESP32 `pushDeviceUpdate()` field names and the
-backend `DeviceUpdatePayload` schema.
-
-## Why this is useful
-
-The simulator lets the complete web system be tested without an ESP32:
-
-```text
-simulation
-    |
-    | POST /api/device/update
-    v
-FastAPI backend
-    |
-    +--> SQLite
-    |
-    +--> WebSocket broadcast
-             |
-             v
-         Frontend
-```
-
-When the physical ESP32 is available, stop the simulator and run the real
-firmware. The backend API does not need a separate simulation endpoint.
