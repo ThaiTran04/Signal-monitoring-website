@@ -9,6 +9,11 @@ __pycache__/
 venv/
 .env
 .env.*
+# ...but DO track the example/template file itself — it's not a secret, and
+# without it nobody knows VITE_API_BASE_URL exists or how to set it for LAN
+# access. ".env.*" above was silently deleting this from every commit.
+!.env.example
+!**/.env.example
 *.log
 .DS_Store
 Thumbs.db

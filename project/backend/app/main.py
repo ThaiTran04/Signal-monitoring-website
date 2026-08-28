@@ -51,3 +51,22 @@ async def on_startup():
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    # Safety net: the documented/normal way to run this is
+    #   uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # (see backend/README.md). But if someone runs this file directly with
+    # `python app/main.py` (or `python -m app.main`), uvicorn's own default
+    # host is 127.0.0.1 — which means the ESP32 and phones/laptops on the
+    # LAN get "connection refused" even though the server "looks" up because
+    # it answers fine from the same PC. Default HOST here to 0.0.0.0 so a
+    # forgotten `--host` flag can never silently break LAN access. Both are
+    # still overridable via environment variables for anyone who *does* want
+    # to restrict it (e.g. HOST=127.0.0.1 for a loopback-only debug run).
+    import os
+    import uvicorn
+
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run("app.main:app", host=host, port=port, reload=False)

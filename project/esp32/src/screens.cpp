@@ -64,21 +64,23 @@ void processServer()
     serverPort = mb.Hreg(HR_SERVER_PORT);
 
     // Save whatever the operator entered so pushDeviceUpdate() can use it right
-    // away; the screen still proceeds to Login either way (matching the
-    // original permissive behavior) — but now shows LOGIN_NO_SERVER on the
-    // physical HMI screen if the reachability check fails, instead of
-    // silently saving a bad IP/port with zero on-screen indication. This
-    // enum value already existed in hmi_map.h's LoginState (presumably
-    // wired up on the HMI-project side as a "server unreachable" banner)
-    // but nothing in the firmware ever set it before this.
+    // away, then queue a reachability check instead of running it here
+    // synchronously. connectWiFi() above only *starts* an async connection —
+    // WiFi almost certainly isn't WL_CONNECTED yet at this exact line, so a
+    // synchronous checkServerReachable() call here was bailing out immediately
+    // (its own internal WiFi-connected guard) and showing LOGIN_NO_SERVER on
+    // the HMI nearly every time, even with a correct IP/port. updateServerCheck()
+    // (called from loop()) performs the real check once WiFi actually connects,
+    // and writes HR_LOGIN_RESULT then. Meanwhile we jump straight to LOGIN with
+    // a neutral result so no false "server unreachable" banner flashes up.
     if (strlen(serverIP) > 0 && serverPort != 0)
     {
         strncpy(savedServerIP, serverIP, 16);
         savedServerPort = serverPort;
         saveServerConfig(serverIP, serverPort);
-        serverConfigured = checkServerReachable(serverIP, serverPort);
+        requestServerCheck(serverIP, serverPort);
 
-        mb.Hreg(HR_LOGIN_RESULT, serverConfigured ? LOGIN_INPUT_USER : LOGIN_NO_SERVER);
+        mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);
         screenJumpTo(SCREEN_LOGIN);
     }
     setBit(HR_SERVER_BIT, 0, false);

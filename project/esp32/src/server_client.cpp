@@ -70,6 +70,45 @@ bool checkServerReachable(const char *ip, uint16_t port)
     return ok;
 }
 
+// --- deferred check state (see requestServerCheck() in the header for why) ---
+static bool pendingServerCheck = false;
+static char pendingCheckIP[17] = "";
+static uint16_t pendingCheckPort = 0;
+static unsigned long pendingCheckStart = 0;
+// If WiFi hasn't finished connecting within this window, stop waiting and
+// report NO_SERVER rather than leaving the operator staring at a screen
+// that never updates. Matches wifi_manager.cpp's own WIFI_TIMEOUT_MS so the
+// two give up around the same time instead of one waiting much longer.
+static const unsigned long SERVER_CHECK_TIMEOUT_MS = 20000;
+
+void requestServerCheck(const char *ip, uint16_t port)
+{
+    strncpy(pendingCheckIP, ip, 16);
+    pendingCheckIP[16] = '\0';
+    pendingCheckPort = port;
+    pendingCheckStart = millis();
+    pendingServerCheck = true;
+}
+
+void updateServerCheck()
+{
+    if (!pendingServerCheck) return;
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        pendingServerCheck = false;
+        serverConfigured = checkServerReachable(pendingCheckIP, pendingCheckPort);
+        mb.Hreg(HR_LOGIN_RESULT, serverConfigured ? LOGIN_INPUT_USER : LOGIN_NO_SERVER);
+    }
+    else if (millis() - pendingCheckStart > SERVER_CHECK_TIMEOUT_MS)
+    {
+        Serial.println(">>> SERVER CHECK ABORTED (WiFi never connected) <<<");
+        pendingServerCheck = false;
+        serverConfigured = false;
+        mb.Hreg(HR_LOGIN_RESULT, LOGIN_NO_SERVER);
+    }
+}
+
 // Derive the machine's run status from the 3-light beacon wired to IN1/IN2/IN3
 // (same signals updateIO() reads for the HMI's IO screen). Priority: error > stop > run.
 void restoreServerFieldsToHmi()
@@ -129,8 +168,24 @@ void pushDeviceUpdate()
     buildServerUrl("/api/device/update", url, sizeof(url));
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(3000);
+    // This call runs on every loop() cycle (STATUS_PUSH_INTERVAL_MS) and is
+    // synchronous — while it's in flight, mb.task() (Modbus/HMI screen) and
+    // updateWiFiState() are NOT serviced, because loop() is a single-threaded
+    // sequence with nothing else pumping in the background. A refused
+    // connection returns almost instantly (the OS sends RST as soon as it
+    // sees nothing listening on that port), so that path was never the slow
+    // one. The slow path is: backend reachable but briefly not answering
+    // (e.g. still starting up / seeding, or busy with a SQLite write) — the
+    // old 3000ms timeout let ONE stalled attempt freeze the whole board for
+    // 3 full seconds, which then delays the WiFi state machine and the next
+    // retry too, compounding into the "long wait before HTTP 200" symptom.
+    // Shortened to bound the worst case while still being generous for a
+    // LAN request (normal LAN round-trip is well under 100ms). The one-shot
+    // checkServerReachable() above (triggered by the operator saving the
+    // SERVER screen) intentionally keeps the longer 3000ms budget — that's
+    // a deliberate user action, not something firing every second.
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     if (!http.begin(url))
     {

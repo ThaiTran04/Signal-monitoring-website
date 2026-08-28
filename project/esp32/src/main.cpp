@@ -60,6 +60,7 @@ void loop()
 
     checkLogout();
     updateWiFiState();
+    updateServerCheck(); // services requestServerCheck() from processServer() once WiFi finishes connecting
     ensureNtpConfigured();
 
     static unsigned long lastStatusPush = 0;
