@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { IoLights } from "../components/shared/IoLights";
 import { MONO, S } from "../utils/constants";
 import type { Machine } from "../types";
 
@@ -95,7 +96,7 @@ export function SetupPage({ machines, loading, error }: SetupPageProps) {
           <table className="w-full text-xs whitespace-nowrap">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {["No.", "Machine", "MAC Address", "IP Address", "Code Ver.", "HMI Ver.", "Status", "Login"].map(
+                {["No.", "Machine", "MAC Address", "IP Address", "Code Ver.", "HMI Ver.", "Status", "IO", "Login"].map(
                   (col) => (
                     <th
                       key={col}
@@ -110,7 +111,7 @@ export function SetupPage({ machines, loading, error }: SetupPageProps) {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-xs text-gray-400">
+                  <td colSpan={9} className="px-5 py-8 text-center text-xs text-gray-400">
                     No devices match the search
                   </td>
                 </tr>
@@ -141,6 +142,9 @@ export function SetupPage({ machines, loading, error }: SetupPageProps) {
                         style={{ background: S[m.status].color }}
                         title={S[m.status].label}
                       />
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <IoLights machine={m} size={8} />
                     </td>
                     <td className="px-4 py-2.5">
                       <span

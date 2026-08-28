@@ -7,8 +7,6 @@ import type {
   ApiMachine,
   ApiMachineListResponse,
   ApiMeResponse,
-  ApiOee,
-  ApiOeeSummary,
   ApiStatusSummary,
 } from "../types";
 
@@ -90,17 +88,6 @@ export const ioApi = {
   },
   current(machineId: number) {
     return apiFetch(`/api/machines/${machineId}/io`);
-  },
-};
-
-// ─── OEE ──────────────────────────────────────────────────────────────────
-
-export const oeeApi = {
-  get(machineId: number) {
-    return apiFetch<ApiOee>(`/api/machines/${machineId}/oee`);
-  },
-  summary() {
-    return apiFetch<ApiOeeSummary>("/api/oee/summary");
   },
 };
 

@@ -13,9 +13,10 @@ export interface UseMachinesResult {
 }
 
 /**
- * Loads the full machine list (all 200 units, in one page) and applies
- * incoming `machine_update` websocket frames in place, so the dashboard
- * heatmap / device table / stat cards stay current without polling.
+ * Loads the full machine list (one page, sized generously so all registered
+ * devices fit) and applies incoming `machine_update` websocket frames in
+ * place, so the dashboard heatmap / device table / stat cards stay current
+ * without polling.
  */
 export function useMachines(enabled: boolean = true): UseMachinesResult {
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -57,7 +58,23 @@ export function useMachines(enabled: boolean = true): UseMachinesResult {
 
   const { connected: wsConnected } = useWebSocket((msg) => {
     setMachines((prev) =>
-      prev.map((m) => (m.id === msg.machine_id ? { ...m, status: msg.status } : m))
+      prev.map((m) =>
+        m.id === msg.machine_id
+          ? {
+              ...m,
+              status: msg.status,
+              // io_input* is only sent by the backend when the ESP32 push that
+              // triggered this frame included an `io` object (see device.py).
+              // Undefined/omitted here means "no change" — keep the existing
+              // value instead of clobbering it with `undefined`.
+              ioInput1: msg.io_input1 ?? m.ioInput1,
+              ioInput2: msg.io_input2 ?? m.ioInput2,
+              ioInput3: msg.io_input3 ?? m.ioInput3,
+              ioInput4: msg.io_input4 ?? m.ioInput4,
+              ioUpdatedAt: msg.timestamp,
+            }
+          : m
+      )
     );
   });
 

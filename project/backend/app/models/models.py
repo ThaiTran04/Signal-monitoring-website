@@ -32,6 +32,17 @@ class Machine(Base):
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
+    # Latest raw digital-input readings from the ESP32's POST /api/device/update
+    # `io` object (input1..input4). Nullable/None = "we've never received an
+    # `io` reading for this machine" (distinct from False = "reading received,
+    # pin is LOW/off"), so the frontend can show Unknown/gray instead of
+    # guessing a color for data it never actually got. See app/api/device.py.
+    io_input1 = Column(Boolean, nullable=True, default=None)
+    io_input2 = Column(Boolean, nullable=True, default=None)
+    io_input3 = Column(Boolean, nullable=True, default=None)
+    io_input4 = Column(Boolean, nullable=True, default=None)
+    io_updated_at = Column(DateTime, nullable=True)
+
     statuses = relationship("MachineStatus", back_populates="machine", cascade="all, delete-orphan")
     io_history = relationship("IoHistory", back_populates="machine", cascade="all, delete-orphan")
     connections = relationship("ConnectionHistory", back_populates="machine", cascade="all, delete-orphan")

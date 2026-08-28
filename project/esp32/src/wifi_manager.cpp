@@ -35,6 +35,32 @@ static bool loadWifiModeFlag()
     return v;
 }
 
+// NOTE: declared in wifi_manager.h and called from connectWiFi() /
+// updateWiFiState() / autoReconnectFromSavedConfig() below, but the bodies
+// were missing from this file entirely (link error: undefined reference to
+// loadWifiCreds/saveWifiCreds). Implemented the same way every other
+// saved-setting in this file is: Preferences, same "wifi" namespace already
+// used for the static-IP-mode flag above (different keys, no collision).
+void saveWifiCreds(const char *s, const char *p)
+{
+    prefs.begin("wifi", false);
+    prefs.putString("ssid", s);
+    prefs.putString("pass", p);
+    prefs.end();
+}
+
+bool loadWifiCreds(char *s, char *p)
+{
+    prefs.begin("wifi", true);
+    String ss = prefs.getString("ssid", "");
+    String pp = prefs.getString("pass", "");
+    prefs.end();
+    if (ss.length() == 0) return false; // never saved
+    strncpy(s, ss.c_str(), 20);
+    strncpy(p, pp.c_str(), 20);
+    return true;
+}
+
 void saveStaticIpConfig()
 {
     prefs.begin("staticip", false);

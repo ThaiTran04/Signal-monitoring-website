@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Calendar } from "lucide-react";
 import { ioApi } from "../services/api";
+import { IoLights } from "../components/shared/IoLights";
 import { MIN_TICKS, MONO, S } from "../utils/constants";
 import { fmtDuration, fmtTime, mapSegment, todayStr } from "../utils/format";
 import type { Machine, MachineStatus, TimeSegment } from "../types";
@@ -69,6 +70,12 @@ export function MachineDetailPage({ machine }: MachineDetailPageProps) {
               {S[machine.status].label}
             </span>
           </div>
+        </div>
+        <div className="ml-auto pl-5 border-l border-gray-100">
+          <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">
+            Beacon Inputs
+          </div>
+          <IoLights machine={machine} />
         </div>
       </div>
 

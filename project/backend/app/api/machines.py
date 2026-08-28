@@ -36,6 +36,9 @@ def _to_out(db: Session, m: Machine) -> MachineOut:
         ip_address=m.ip_address, firmware_version=m.firmware_version,
         hmi_version=m.hmi_version, hmi_login=m.hmi_login,
         status=status, offline_since=offline_since,
+        io_input1=m.io_input1, io_input2=m.io_input2,
+        io_input3=m.io_input3, io_input4=m.io_input4,
+        io_updated_at=m.io_updated_at,
     )
 
 

@@ -54,6 +54,11 @@ export function mapMachine(m: ApiMachine): Machine {
     hmiVersion: m.hmi_version ?? "—",
     offlineSince: m.offline_since ? fmtDateTime(m.offline_since) : undefined,
     hmiLogin: m.hmi_login,
+    ioInput1: m.io_input1 ?? undefined,
+    ioInput2: m.io_input2 ?? undefined,
+    ioInput3: m.io_input3 ?? undefined,
+    ioInput4: m.io_input4 ?? undefined,
+    ioUpdatedAt: m.io_updated_at ?? undefined,
   };
 }
 
@@ -63,8 +68,8 @@ export function mapSegment(s: ApiIoSegment): TimeSegment {
 
 /**
  * A connection-history row can carry both a connect and a disconnect
- * timestamp. Expand each row into up to two flat log entries, matching the
- * shape the original mock HISTORY_DATA used (one row per event).
+ * timestamp. Expand each row into up to two flat log entries (one per
+ * event) for the connection-history table.
  */
 export function mapConnectionHistoryRows(
   rows: ApiConnectionHistory[]

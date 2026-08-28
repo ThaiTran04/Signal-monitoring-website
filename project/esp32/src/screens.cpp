@@ -64,19 +64,21 @@ void processServer()
     serverPort = mb.Hreg(HR_SERVER_PORT);
 
     // Save whatever the operator entered so pushDeviceUpdate() can use it right
-    // away; do a one-shot reachability check just for the Serial log (screen still
-    // proceeds to Login either way, matching the original permissive behavior).
+    // away; the screen still proceeds to Login either way (matching the
+    // original permissive behavior) — but now shows LOGIN_NO_SERVER on the
+    // physical HMI screen if the reachability check fails, instead of
+    // silently saving a bad IP/port with zero on-screen indication. This
+    // enum value already existed in hmi_map.h's LoginState (presumably
+    // wired up on the HMI-project side as a "server unreachable" banner)
+    // but nothing in the firmware ever set it before this.
     if (strlen(serverIP) > 0 && serverPort != 0)
     {
         strncpy(savedServerIP, serverIP, 16);
         savedServerPort = serverPort;
         saveServerConfig(serverIP, serverPort);
         serverConfigured = checkServerReachable(serverIP, serverPort);
-    }
 
-    if (strlen(serverIP) > 0 && serverPort != 0)
-    {
-        mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);
+        mb.Hreg(HR_LOGIN_RESULT, serverConfigured ? LOGIN_INPUT_USER : LOGIN_NO_SERVER);
         screenJumpTo(SCREEN_LOGIN);
     }
     setBit(HR_SERVER_BIT, 0, false);

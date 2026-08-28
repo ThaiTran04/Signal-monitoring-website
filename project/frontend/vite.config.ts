@@ -31,6 +31,16 @@ export default defineConfig({
     },
   },
 
+  // Listen on 0.0.0.0 (all network interfaces), not just localhost — needed
+  // so other devices on the LAN (phone, tablet, another PC) can open the
+  // dashboard via http://<this-PC's-LAN-IP>:5173. With the default
+  // localhost-only binding, `npm run dev` is only ever reachable from the
+  // same machine it's running on. Run `ipconfig` (Windows) / `ifconfig` or
+  // `ip addr` (Linux/Mac) on this machine to find that LAN IP.
+  server: {
+    host: true,
+  },
+
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

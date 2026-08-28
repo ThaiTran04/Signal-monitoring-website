@@ -15,6 +15,17 @@ export interface Machine {
   hmiVersion: string;
   offlineSince?: string;
   hmiLogin: boolean;
+  /**
+   * Raw digital-input readings from the ESP32 (IN1=error/red, IN2=stop/yellow,
+   * IN3=run/green — confirmed against esp32/include/hmi_map.h + server_client.cpp).
+   * `undefined` = no `io` reading has ever been received for this machine yet;
+   * do NOT treat that as "off" (see components/shared/IoLights.tsx).
+   */
+  ioInput1?: boolean;
+  ioInput2?: boolean;
+  ioInput3?: boolean;
+  ioInput4?: boolean;
+  ioUpdatedAt?: string;
 }
 
 export interface HistoryEntry {
@@ -41,6 +52,11 @@ export interface ApiMachine {
   hmi_login: boolean;
   status: MachineStatus;
   offline_since?: string | null;
+  io_input1?: boolean | null;
+  io_input2?: boolean | null;
+  io_input3?: boolean | null;
+  io_input4?: boolean | null;
+  io_updated_at?: string | null;
 }
 
 export interface ApiMachineListResponse {
@@ -66,24 +82,6 @@ export interface ApiIoHistoryResponse {
   machine_id: number;
   date: string;
   segments: ApiIoSegment[];
-}
-
-export interface ApiOee {
-  machine_id: number;
-  production: number;
-  availability: number;
-  performance: number;
-  quality: number;
-  oee: number;
-  timestamp: string;
-}
-
-export interface ApiOeeSummary {
-  avg_production: number;
-  avg_availability: number;
-  avg_performance: number;
-  avg_quality: number;
-  avg_oee: number;
 }
 
 export interface ApiConnectionHistory {
@@ -126,5 +124,9 @@ export interface WsMachineUpdate {
   machine_id: number;
   machine_name: string;
   status: MachineStatus;
+  io_input1?: boolean | null;
+  io_input2?: boolean | null;
+  io_input3?: boolean | null;
+  io_input4?: boolean | null;
   timestamp: string;
 }

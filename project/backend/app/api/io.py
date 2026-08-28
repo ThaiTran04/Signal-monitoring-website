@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database.db import get_db
 from app.models.models import Machine, IoHistory, User
-from app.schemas.schemas import IoHistoryResponse, IoSegment
+from app.schemas.schemas import IoHistoryResponse, IoSegment, _as_utc_iso
 from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/api/machines", tags=["io"])
@@ -12,6 +12,11 @@ router = APIRouter(prefix="/api/machines", tags=["io"])
 
 @router.get("/{machine_id}/io")
 def get_current_io(machine_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Current snapshot for a machine: the aggregate run/stop/error/offline
+    `state` (unchanged, historical behavior) PLUS the raw IN1-4 digital-input
+    readings from the ESP32's last `io` payload. `io_input*` is null when no
+    `io` reading has ever been received for this machine — the frontend must
+    treat that as Unknown/no-data, not as "off" (see MachineOut/device.py)."""
     m = db.query(Machine).filter(Machine.id == machine_id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -21,8 +26,16 @@ def get_current_io(machine_id: int, db: Session = Depends(get_db), user: User = 
         .order_by(IoHistory.timestamp.desc())
         .first()
     )
-    return {"machine_id": machine_id, "state": latest.state if latest else "offline",
-            "timestamp": latest.timestamp if latest else None}
+    return {
+        "machine_id": machine_id,
+        "state": latest.state if latest else "offline",
+        "timestamp": _as_utc_iso(latest.timestamp) if latest else None,
+        "io_input1": m.io_input1,
+        "io_input2": m.io_input2,
+        "io_input3": m.io_input3,
+        "io_input4": m.io_input4,
+        "io_updated_at": _as_utc_iso(m.io_updated_at) if m.io_updated_at else None,
+    }
 
 
 @router.get("/{machine_id}/io/history", response_model=IoHistoryResponse)

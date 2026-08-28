@@ -32,6 +32,17 @@ def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetim
         m.ip_address = payload.ip
         m.updated_at = now
 
+    # Persist the raw digital-input readings (IN1-4) if this push included
+    # them. If `io` was omitted, leave the previous reading in place rather
+    # than overwriting it with a guess — absence of data isn't the same as
+    # "all inputs off". See DeviceIoPayload/MachineOut in schemas.py.
+    if payload.io is not None:
+        m.io_input1 = bool(payload.io.input1)
+        m.io_input2 = bool(payload.io.input2)
+        m.io_input3 = bool(payload.io.input3)
+        m.io_input4 = bool(payload.io.input4)
+        m.io_updated_at = now
+
     prev_status_row = (
         db.query(MachineStatus)
         .filter(MachineStatus.machine_id == m.id)
@@ -66,7 +77,15 @@ def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetim
 
     db.commit()
 
-    return {"machine_id": m.id, "machine_name": m.machine_name, "status": status}
+    return {
+        "machine_id": m.id,
+        "machine_name": m.machine_name,
+        "status": status,
+        "io_input1": m.io_input1,
+        "io_input2": m.io_input2,
+        "io_input3": m.io_input3,
+        "io_input4": m.io_input4,
+    }
 
 
 @router.post("/update")
@@ -88,6 +107,10 @@ async def device_update(payload: DeviceUpdatePayload, db: Session = Depends(get_
         "machine_id": result["machine_id"],
         "machine_name": result["machine_name"],
         "status": result["status"],
+        "io_input1": result["io_input1"],
+        "io_input2": result["io_input2"],
+        "io_input3": result["io_input3"],
+        "io_input4": result["io_input4"],
         "timestamp": now.isoformat(),
     })
 

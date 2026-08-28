@@ -57,7 +57,14 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
             <div className="flex items-center gap-5">
               {(["run", "stop", "error", "offline"] as MachineStatus[]).map((s) => (
                 <div key={s} className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: S[s].color }} />
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                    style={
+                      s === "offline"
+                        ? { background: "#ffffff", border: "1px solid #d1d5db" }
+                        : { background: S[s].color }
+                    }
+                  />
                   <span className="text-[11px] text-gray-500">{S[s].label}</span>
                 </div>
               ))}
@@ -71,28 +78,38 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
               gap: "4px",
             }}
           >
-            {machines.map((machine) => (
-              <button
-                key={machine.id}
-                onClick={() => onMachineClick(machine)}
-                title={`${machine.name} – ${S[machine.status].label}`}
-                className="aspect-square rounded-sm relative cursor-pointer transition-opacity hover:opacity-70 focus:outline-none"
-                style={{ background: S[machine.status].color }}
-              >
-                <span
-                  className="absolute inset-0 flex items-end justify-center leading-none"
-                  style={{
-                    paddingBottom: "2px",
-                    fontSize: "7px",
-                    fontFamily: MONO,
-                    color: "rgba(255,255,255,0.80)",
-                    letterSpacing: "-0.03em",
-                  }}
+            {machines.map((machine) => {
+              const isOffline = machine.status === "offline";
+              return (
+                <button
+                  key={machine.id}
+                  onClick={() => onMachineClick(machine)}
+                  title={`${machine.name} – ${S[machine.status].label}`}
+                  className="aspect-square rounded-sm relative cursor-pointer transition-opacity hover:opacity-70 focus:outline-none"
+                  style={
+                    isOffline
+                      ? {
+                          background: "#ffffff",
+                          border: "1px solid #d1d5db",
+                        }
+                      : { background: S[machine.status].color }
+                  }
                 >
-                  {String(machine.id).padStart(3, "0")}
-                </span>
-              </button>
-            ))}
+                  <span
+                    className="absolute inset-0 flex items-end justify-center leading-none"
+                    style={{
+                      paddingBottom: "2px",
+                      fontSize: "7px",
+                      fontFamily: MONO,
+                      color: isOffline ? "rgba(107,114,128,0.8)" : "rgba(255,255,255,0.80)",
+                      letterSpacing: "-0.03em",
+                    }}
+                  >
+                    {String(machine.id).padStart(3, "0")}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
