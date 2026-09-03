@@ -104,6 +104,7 @@ class StatusSummary(BaseModel):
     run: int
     stop: int
     error: int
+    unknown: int
     offline: int
 
 
@@ -164,5 +165,5 @@ class DeviceUpdatePayload(BaseModel):
     rssi: Optional[int] = None
     wifi_connected: bool = True
     server_connected: bool = True
-    status: str  # RUNNING | STOPPED | ERROR | OFFLINE
+    status: str  # RUNNING | STOPPED | ERROR | UNKNOWN | OFFLINE
     io: Optional[DeviceIoPayload] = None

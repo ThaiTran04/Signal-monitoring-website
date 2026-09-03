@@ -10,7 +10,7 @@ from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/device", tags=["device"])
 
-STATUS_MAP = {"RUNNING": "run", "STOPPED": "stop", "ERROR": "error", "OFFLINE": "offline"}
+STATUS_MAP = {"RUNNING": "run", "STOPPED": "stop", "ERROR": "error", "UNKNOWN": "unknown", "OFFLINE": "offline"}
 
 
 def _io_state_from_bits(in1, in2, in3) -> str:

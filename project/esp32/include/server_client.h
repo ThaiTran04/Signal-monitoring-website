@@ -80,7 +80,7 @@ void requestServerCheck(const char *ip, uint16_t port);
 // no-op when there's nothing pending. See requestServerCheck() above.
 void updateServerCheck();
 
-// Reads the run/stop/error beacon and returns "RUNNING"/"STOPPED"/"ERROR".
+// Reads the run/stop/error beacon and returns "RUNNING"/"STOPPED"/"ERROR"/"UNKNOWN".
 const char *deriveMachineStatus();
 
 // POSTs current machine status to /api/device/update. Call from loop() on

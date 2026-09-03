@@ -1,6 +1,6 @@
 // ─── Domain types ───────────────────────────────────────────────────────────
 
-export type MachineStatus = "run" | "stop" | "error" | "offline";
+export type MachineStatus = "run" | "stop" | "error" | "unknown" | "offline";
 
 /**
  * IO-only state, used exclusively by Dashboard IO and Machine Detail → I/O
@@ -80,6 +80,7 @@ export interface ApiStatusSummary {
   run: number;
   stop: number;
   error: number;
+  unknown: number;
   offline: number;
 }
 

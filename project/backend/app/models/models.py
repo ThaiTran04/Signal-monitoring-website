@@ -53,7 +53,7 @@ class MachineStatus(Base):
     __tablename__ = "machine_status"
     id = Column(Integer, primary_key=True, index=True)
     machine_id = Column(Integer, ForeignKey("machines.id"), nullable=False, index=True)
-    status = Column(String(16), nullable=False)  # run | stop | error | offline
+    status = Column(String(16), nullable=False)  # run | stop | error | unknown | offline
     wifi_connected = Column(Boolean, default=False)
     server_connected = Column(Boolean, default=False)
     rssi = Column(Integer, nullable=True)

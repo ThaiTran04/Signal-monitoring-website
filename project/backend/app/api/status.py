@@ -32,7 +32,7 @@ def get_status(machine_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.get("/status/summary", response_model=StatusSummary)
 def status_summary(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     machines = db.query(Machine).all()
-    counts = {"run": 0, "stop": 0, "error": 0, "offline": 0}
+    counts = {"run": 0, "stop": 0, "error": 0, "unknown": 0, "offline": 0}
     for m in machines:
         st = (
             db.query(MachineStatus)

@@ -126,7 +126,7 @@ const char *deriveMachineStatus()
     if (inRed)    return "ERROR";
     if (inYellow) return "STOPPED";
     if (inGreen)  return "RUNNING";
-    return "STOPPED"; // no beacon active -> treat as stopped, not offline
+    return "UNKNOWN"; // no beacon active -> no reading yet, not "stopped"/offline
 }
 
 void pushDeviceUpdate()
