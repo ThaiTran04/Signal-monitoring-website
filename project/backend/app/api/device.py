@@ -13,6 +13,22 @@ router = APIRouter(prefix="/api/device", tags=["device"])
 STATUS_MAP = {"RUNNING": "run", "STOPPED": "stop", "ERROR": "error", "OFFLINE": "offline"}
 
 
+def _io_state_from_bits(in1, in2, in3) -> str:
+    """IO-only state, derived strictly from the raw beacon inputs IN1-3 —
+    completely independent of the connection-tracking `status`/"offline"
+    concept above (that stays in MachineStatus/ConnectionHistory for
+    Setup/Connection, untouched). Priority matches the physical beacon:
+    IN1 (error/red) > IN2 (stop/yellow) > IN3 (run/green). No input set
+    (or no reading at all, i.e. None) -> "unknown", never "offline"."""
+    if in1:
+        return "error"
+    if in2:
+        return "stop"
+    if in3:
+        return "run"
+    return "unknown"
+
+
 def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetime) -> dict:
     """All the blocking DB work for a device update. Runs off the event loop
     (see device_update() below) so one slow/locked SQLite write can't stall
@@ -56,7 +72,11 @@ def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetim
         wifi_connected=payload.wifi_connected, server_connected=payload.server_connected,
         rssi=payload.rssi, timestamp=now,
     ))
-    db.add(IoHistory(machine_id=m.id, state=status, timestamp=now))
+    # IoHistory (the Dashboard IO / Machine Detail I/O chart) never uses the
+    # connection "status"/"offline" value above — it's keyed purely off
+    # IN1/IN2/IN3, so an "offline" reading can never appear there.
+    io_state = _io_state_from_bits(m.io_input1, m.io_input2, m.io_input3)
+    db.add(IoHistory(machine_id=m.id, state=io_state, timestamp=now))
 
     # Track connect/disconnect transitions
     if prev_status != "offline" and status == "offline":

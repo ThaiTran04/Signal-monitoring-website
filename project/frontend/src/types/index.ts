@@ -2,6 +2,17 @@
 
 export type MachineStatus = "run" | "stop" | "error" | "offline";
 
+/**
+ * IO-only state, used exclusively by Dashboard IO and Machine Detail → I/O
+ * Detail (heatmap, beacon lights, I/O timeline chart/legend). Derived purely
+ * from the raw beacon inputs IN1/IN2/IN3 — never from `MachineStatus`
+ * ("offline" is a connection-tracking concept that belongs to Setup/
+ * Connection only and must never appear here). No input set (or no `io`
+ * reading received yet) => "unknown", not "offline". See utils/format.ts
+ * (ioStatusOf) for how this is computed.
+ */
+export type IoStatus = "run" | "stop" | "error" | "unknown";
+
 export type Page = "dashboard" | "setup" | "history" | "detail";
 
 /** UI-facing machine shape (camelCase, matches what the original App.tsx used). */
@@ -37,7 +48,7 @@ export interface HistoryEntry {
 export interface TimeSegment {
   startMin: number;
   endMin: number;
-  status: MachineStatus;
+  status: IoStatus;
 }
 
 // ─── API (snake_case) response shapes, mirroring backend/app/schemas ────────
@@ -75,7 +86,7 @@ export interface ApiStatusSummary {
 export interface ApiIoSegment {
   start_min: number;
   end_min: number;
-  status: MachineStatus;
+  status: IoStatus;
 }
 
 export interface ApiIoHistoryResponse {

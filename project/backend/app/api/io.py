@@ -10,13 +10,24 @@ from app.services.auth import get_current_user
 router = APIRouter(prefix="/api/machines", tags=["io"])
 
 
+def _normalize_io_state(state: str | None) -> str:
+    """IO-facing state is one of run/stop/error/unknown only. "offline" is a
+    connection-status concept (see Setup/Connection + status.py) and must
+    never leak into Dashboard IO / I/O Detail — anything else unexpected
+    (missing row, legacy data, etc.) collapses to "unknown" instead."""
+    if state in ("run", "stop", "error"):
+        return state
+    return "unknown"
+
+
 @router.get("/{machine_id}/io")
 def get_current_io(machine_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Current snapshot for a machine: the aggregate run/stop/error/offline
-    `state` (unchanged, historical behavior) PLUS the raw IN1-4 digital-input
-    readings from the ESP32's last `io` payload. `io_input*` is null when no
-    `io` reading has ever been received for this machine — the frontend must
-    treat that as Unknown/no-data, not as "off" (see MachineOut/device.py)."""
+    """Current snapshot for a machine: the aggregate run/stop/error/unknown
+    `state` (derived purely from IN1-3, never "offline") PLUS the raw IN1-4
+    digital-input readings from the ESP32's last `io` payload. `io_input*`
+    is null when no `io` reading has ever been received for this machine —
+    the frontend must treat that as Unknown/no-data, not as "off" (see
+    MachineOut/device.py)."""
     m = db.query(Machine).filter(Machine.id == machine_id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -28,7 +39,7 @@ def get_current_io(machine_id: int, db: Session = Depends(get_db), user: User = 
     )
     return {
         "machine_id": machine_id,
-        "state": latest.state if latest else "offline",
+        "state": _normalize_io_state(latest.state if latest else None),
         "timestamp": _as_utc_iso(latest.timestamp) if latest else None,
         "io_input1": m.io_input1,
         "io_input2": m.io_input2,
@@ -83,14 +94,16 @@ def get_io_history(
                 # day is over, so it really did run out the clock.
                 end_min = 1440
             if end_min > start_min:
-                segments.append(IoSegment(start_min=start_min, end_min=end_min, status=r.state))
+                segments.append(
+                    IoSegment(start_min=start_min, end_min=end_min, status=_normalize_io_state(r.state))
+                )
     else:
         # No stored rows for this date — the device hasn't reported anything
         # for it (a day before the HMI started running, or a future date),
         # so there's nothing real to draw. Empty list -> chart stays blank
-        # instead of fabricating a segment (even an "offline" one). Bars only
-        # appear once real IN1/IN2/IN3 beacon readings come in from the HMI
-        # via POST /api/device/update.
+        # instead of fabricating a segment (not even an "unknown" one). Bars
+        # only appear once real IN1/IN2/IN3 beacon readings come in from the
+        # HMI via POST /api/device/update.
         segments = []
 
     return IoHistoryResponse(machine_id=machine_id, date=date, segments=segments)

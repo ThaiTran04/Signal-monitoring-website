@@ -3,8 +3,8 @@ import { Calendar } from "lucide-react";
 import { ioApi } from "../services/api";
 import { IoLights } from "../components/shared/IoLights";
 import { MIN_TICKS, MONO, S } from "../utils/constants";
-import { fmtDuration, fmtTime, mapSegment, todayStr } from "../utils/format";
-import type { Machine, MachineStatus, TimeSegment } from "../types";
+import { fmtDuration, fmtTime, ioStatusOf, mapSegment, todayStr } from "../utils/format";
+import type { IoStatus, Machine, TimeSegment } from "../types";
 
 export interface MachineDetailPageProps {
   machine: Machine;
@@ -53,11 +53,15 @@ export function MachineDetailPage({ machine }: MachineDetailPageProps) {
     [allSegments]
   );
 
+  // I/O Detail reflects ONLY the IN1/IN2/IN3 beacon (via ioStatusOf) — never
+  // machine.status/"offline", which is a Setup/Connection-only concept.
+  const ioStatus = ioStatusOf(machine);
+
   return (
     <div className="space-y-4 max-w-5xl">
       {/* Machine header */}
       <div className="bg-white border border-gray-200 rounded-lg px-6 py-5 flex items-center gap-5">
-        <div className="w-1.5 h-14 rounded-full flex-shrink-0" style={{ background: S[machine.status].color }} />
+        <div className="w-1.5 h-14 rounded-full flex-shrink-0" style={{ background: S[ioStatus].color }} />
         <div>
           <div className="text-2xl font-bold text-gray-900 leading-none" style={{ fontFamily: MONO }}>
             {machine.name}
@@ -65,9 +69,9 @@ export function MachineDetailPage({ machine }: MachineDetailPageProps) {
           <div className="flex items-center gap-3 mt-2.5">
             <span
               className="px-3 py-1 text-xs font-bold uppercase tracking-wide text-white rounded-full"
-              style={{ background: S[machine.status].color }}
+              style={{ background: S[ioStatus].color }}
             >
-              {S[machine.status].label}
+              {S[ioStatus].label}
             </span>
           </div>
         </div>
@@ -218,7 +222,7 @@ export function MachineDetailPage({ machine }: MachineDetailPageProps) {
 
         {/* Legend */}
         <div className="flex items-center gap-8 mt-4 pt-4 border-t border-gray-100">
-          {(["run", "stop", "error", "offline"] as MachineStatus[]).map((s) => (
+          {(["run", "stop", "error", "unknown"] as IoStatus[]).map((s) => (
             <div key={s} className="flex items-center gap-2">
               <span className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: S[s].color }} />
               <span className="text-xs text-gray-600 font-medium">{S[s].label}</span>

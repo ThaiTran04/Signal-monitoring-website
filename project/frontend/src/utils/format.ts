@@ -3,9 +3,33 @@ import type {
   ApiConnectionHistory,
   ApiIoSegment,
   HistoryEntry,
+  IoStatus,
   Machine,
   TimeSegment,
 } from "../types";
+
+/**
+ * Derives the IO status for Dashboard IO / Machine Detail → I/O Detail
+ * purely from the raw beacon inputs IN1/IN2/IN3 (ioInput1/2/3). This is
+ * intentionally independent of `machine.status` (which can be "offline" —
+ * a connection-tracking concept used only by Setup/Connection). No input
+ * set, or no `io` reading ever received, maps to "unknown" — never
+ * "offline". Priority matches the physical beacon: IN1 (error) > IN2
+ * (stop) > IN3 (run).
+ */
+export function ioStatusOf(m: Pick<Machine, "ioInput1" | "ioInput2" | "ioInput3">): IoStatus {
+  if (m.ioInput1) return "error";
+  if (m.ioInput2) return "stop";
+  if (m.ioInput3) return "run";
+  return "unknown";
+}
+
+/** Defensive normalization: an IO status coming from the API should only
+ * ever be run/stop/error/unknown, but this guards against any unexpected
+ * value (e.g. legacy data) leaking through as something else. */
+function normalizeIoStatus(status: string): IoStatus {
+  return status === "run" || status === "stop" || status === "error" ? status : "unknown";
+}
 
 export function fmtTime(mins: number): string {
   const h = Math.floor(mins / 60);
@@ -63,7 +87,7 @@ export function mapMachine(m: ApiMachine): Machine {
 }
 
 export function mapSegment(s: ApiIoSegment): TimeSegment {
-  return { startMin: s.start_min, endMin: s.end_min, status: s.status };
+  return { startMin: s.start_min, endMin: s.end_min, status: normalizeIoStatus(s.status) };
 }
 
 /**

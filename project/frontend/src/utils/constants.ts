@@ -1,11 +1,12 @@
 import { LayoutGrid, Settings, History } from "lucide-react";
-import type { MachineStatus, Page } from "../types";
+import type { IoStatus, MachineStatus, Page } from "../types";
 
-export const S: Record<MachineStatus, { color: string; label: string }> = {
+export const S: Record<MachineStatus | IoStatus, { color: string; label: string }> = {
   run: { color: "#16a34a", label: "Run" }, // xanh (green)
   stop: { color: "#eab308", label: "Stop" }, // vàng (yellow) — was amber/orange (#d97706)
   error: { color: "#dc2626", label: "Error" }, // đỏ (red)
-  offline: { color: "#9ca3af", label: "Offline" }, // xám trung tính — "không màu trạng thái" (no active status color)
+  offline: { color: "#9ca3af", label: "Offline" }, // xám trung tính — Setup/Connection only, never used by Dashboard IO / I/O Detail
+  unknown: { color: "#9ca3af", label: "Unknown" }, // xám — no IN1/IN2/IN3 reading (Dashboard IO / I/O Detail only, not "Offline")
 };
 
 export const MONO = "'JetBrains Mono', monospace";

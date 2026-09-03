@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { StatCard } from "../components/shared/StatCard";
 import { MONO, S } from "../utils/constants";
-import type { Machine, MachineStatus } from "../types";
+import { fmtDateTime, ioStatusOf } from "../utils/format";
+import type { IoStatus, Machine } from "../types";
 
 export interface DashboardPageProps {
   machines: Machine[];
@@ -10,15 +11,17 @@ export interface DashboardPageProps {
   onMachineClick: (m: Machine) => void;
 }
 
+// Dashboard IO reflects ONLY the IN1/IN2/IN3 beacon (via ioStatusOf) — never
+// machine.status/"offline", which is a Setup/Connection-only concept.
 export function DashboardPage({ machines, loading, error, onMachineClick }: DashboardPageProps) {
   const counts = useMemo(() => {
-    const c = { run: 0, stop: 0, error: 0, offline: 0 };
-    machines.forEach((m) => c[m.status]++);
+    const c = { run: 0, stop: 0, error: 0, unknown: 0 };
+    machines.forEach((m) => c[ioStatusOf(m)]++);
     return c;
   }, [machines]);
 
-  const offlineMachines = useMemo(
-    () => machines.filter((m) => m.status === "offline"),
+  const unknownMachines = useMemo(
+    () => machines.filter((m) => ioStatusOf(m) === "unknown"),
     [machines]
   );
 
@@ -38,12 +41,12 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
     <div className="space-y-4">
       {/* Summary row */}
       <div className="grid grid-cols-4 gap-4">
-        {(["run", "stop", "error", "offline"] as MachineStatus[]).map((s) => (
+        {(["run", "stop", "error", "unknown"] as IoStatus[]).map((s) => (
           <StatCard key={s} label={S[s].label} value={counts[s]} color={S[s].color} />
         ))}
       </div>
 
-      {/* Heatmap + Offline list */}
+      {/* Heatmap + Unknown list */}
       <div className="flex gap-4 items-start">
         {/* Heatmap card */}
         <div className="flex-1 bg-white border border-gray-200 rounded-lg p-5 min-w-0">
@@ -55,12 +58,12 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
               </span>
             </h2>
             <div className="flex items-center gap-5">
-              {(["run", "stop", "error", "offline"] as MachineStatus[]).map((s) => (
+              {(["run", "stop", "error", "unknown"] as IoStatus[]).map((s) => (
                 <div key={s} className="flex items-center gap-1.5">
                   <span
                     className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
                     style={
-                      s === "offline"
+                      s === "unknown"
                         ? { background: "#ffffff", border: "1px solid #d1d5db" }
                         : { background: S[s].color }
                     }
@@ -79,20 +82,21 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
             }}
           >
             {machines.map((machine) => {
-              const isOffline = machine.status === "offline";
+              const ioStatus = ioStatusOf(machine);
+              const isUnknown = ioStatus === "unknown";
               return (
                 <button
                   key={machine.id}
                   onClick={() => onMachineClick(machine)}
-                  title={`${machine.name} – ${S[machine.status].label}`}
+                  title={`${machine.name} – ${S[ioStatus].label}`}
                   className="aspect-square rounded-sm relative cursor-pointer transition-opacity hover:opacity-70 focus:outline-none"
                   style={
-                    isOffline
+                    isUnknown
                       ? {
                           background: "#ffffff",
                           border: "1px solid #d1d5db",
                         }
-                      : { background: S[machine.status].color }
+                      : { background: S[ioStatus].color }
                   }
                 >
                   <span
@@ -101,7 +105,7 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
                       paddingBottom: "2px",
                       fontSize: "7px",
                       fontFamily: MONO,
-                      color: isOffline ? "rgba(107,114,128,0.8)" : "rgba(255,255,255,0.80)",
+                      color: isUnknown ? "rgba(107,114,128,0.8)" : "rgba(255,255,255,0.80)",
                       letterSpacing: "-0.03em",
                     }}
                   >
@@ -113,15 +117,17 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
           </div>
         </div>
 
-        {/* Offline list */}
+        {/* Unknown list — machines with no IN1/IN2/IN3 beacon reading right
+            now. This is NOT "offline"/disconnected (see Setup/Connection for
+            that); it purely means no beacon signal has been read. */}
         <div className="w-60 flex-shrink-0 bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Offline</h2>
+            <h2 className="text-sm font-semibold text-gray-700">Unknown</h2>
             <span
               className="text-[11px] font-bold px-1.5 py-0.5 rounded"
-              style={{ background: "rgba(107,114,128,0.12)", color: S.offline.color, fontFamily: MONO }}
+              style={{ background: "rgba(107,114,128,0.12)", color: S.unknown.color, fontFamily: MONO }}
             >
-              {offlineMachines.length}
+              {unknownMachines.length}
             </span>
           </div>
           <div className="overflow-y-auto max-h-[500px]">
@@ -132,12 +138,12 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
                     Machine
                   </th>
                   <th className="text-left px-4 py-2 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-                    Offline
+                    Last IO
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {offlineMachines.map((m) => (
+                {unknownMachines.map((m) => (
                   <tr
                     key={m.id}
                     onClick={() => onMachineClick(m)}
@@ -147,7 +153,7 @@ export function DashboardPage({ machines, loading, error, onMachineClick }: Dash
                       {m.name}
                     </td>
                     <td className="px-4 py-2 text-gray-500" style={{ fontFamily: MONO }}>
-                      {m.offlineSince?.split(" ")[1] ?? "—"} — Now
+                      {m.ioUpdatedAt ? fmtDateTime(m.ioUpdatedAt) : "—"}
                     </td>
                   </tr>
                 ))}

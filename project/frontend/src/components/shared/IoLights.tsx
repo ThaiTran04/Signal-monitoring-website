@@ -9,17 +9,21 @@ export interface IoLightsProps {
 /**
  * Shows the machine's 3 physical beacon inputs as colored dots, using the
  * REAL last-reported IN1-3 readings from ESP32 (io_input1/2/3) — not the
- * derived run/stop/error `status` field. Mapping confirmed against
- * esp32/include/hmi_map.h + esp32/src/server_client.cpp:
- *   IN1 (io_input1) = ĐỎ / LỖI  (error)
- *   IN2 (io_input2) = VÀNG / DỪNG (stop)
- *   IN3 (io_input3) = XANH / CHẠY (run)
+ * connection `status` field (offline/connected is a Setup/Connection-only
+ * concept and must never affect this widget). Mapping confirmed against
+ * esp32/include/hmi_map.h + esp32/src/server_client.cpp (pins.h IN1/IN2/IN3
+ * = hmi_map.h IN00/IN01/IN02):
+ *   IN1 (io_input1) = IN00 = ĐỎ / LỖI   (error)
+ *   IN2 (io_input2) = IN01 = VÀNG / DỪNG (stop)
+ *   IN3 (io_input3) = IN02 = XANH / CHẠY (run)
+ * io_input4 (IN03 = "mở cửa") is intentionally NOT used here — it's a
+ * separate door-open signal, not part of the run/stop/error beacon.
  *
- * If the machine is offline, or no `io` reading has ever been received for
- * it, all three dots render as unlit/gray "no data" — never guessed as on.
+ * If no `io` reading has ever been received for this machine, all three
+ * dots render as unlit/gray "no data" (Unknown) — never guessed as on, and
+ * never labeled "Offline".
  */
 export function IoLights({ machine, size = 10 }: IoLightsProps) {
-  const offline = machine.status === "offline";
   const hasReading =
     machine.ioInput1 !== undefined ||
     machine.ioInput2 !== undefined ||
@@ -34,7 +38,7 @@ export function IoLights({ machine, size = 10 }: IoLightsProps) {
   return (
     <div className="flex items-center gap-2.5">
       {lights.map((l) => {
-        const lit = !offline && hasReading && l.on === true;
+        const lit = hasReading && l.on === true;
         return (
           <div key={l.label} className="flex items-center gap-1.5" title={l.label}>
             <span
@@ -57,10 +61,7 @@ export function IoLights({ machine, size = 10 }: IoLightsProps) {
           </div>
         );
       })}
-      {!offline && !hasReading && (
-        <span className="text-[10px] text-gray-400 ml-1">No IO data yet</span>
-      )}
-      {offline && <span className="text-[10px] text-gray-400 ml-1">Offline</span>}
+      {!hasReading && <span className="text-[10px] text-gray-400 ml-1">Unknown</span>}
     </div>
   );
 }
