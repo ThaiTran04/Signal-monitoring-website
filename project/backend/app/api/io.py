@@ -105,30 +105,56 @@ def get_io_history(
         segments = []
         now_local = _to_local(datetime.now(timezone.utc))
         is_today = req_date == now_local.date()
-        for i, r in enumerate(rows):
-            r_local = _to_local(r.timestamp)
-            start_min = r_local.hour * 60 + r_local.minute
-            if i + 1 < len(rows):
-                nxt_local = _to_local(rows[i + 1].timestamp)
-                end_min = nxt_local.hour * 60 + nxt_local.minute
-                if end_min <= start_min:
+
+        # The ESP32 pushes a fresh IoHistory row roughly every second (see
+        # esp32 STATUS_PUSH_INTERVAL_MS) regardless of whether the IO state
+        # actually changed. Building one segment per raw row (the old code)
+        # meant a day with almost no real state changes still produced up to
+        # ~1440 near-duplicate 1-minute segments — the actual root cause of
+        # the chart being slow (thousands of DOM nodes to render) AND of it
+        # looking like one unbroken solid block of color (adjacent
+        # same-color segments have no visible seam). Collapse consecutive
+        # rows that share the same state first, so a segment only starts at
+        # a genuine transition.
+        collapsed: list[tuple[datetime, str]] = []
+        for r in rows:
+            state = _normalize_io_state(r.state)
+            if collapsed and collapsed[-1][1] == state:
+                continue
+            collapsed.append((r.timestamp, state))
+
+        def _sec_of_day(dt: datetime) -> int:
+            return dt.hour * 3600 + dt.minute * 60 + dt.second
+
+        for i, (ts, state) in enumerate(collapsed):
+            r_local = _to_local(ts)
+            start_sec = _sec_of_day(r_local)
+            if i + 1 < len(collapsed):
+                nxt_local = _to_local(collapsed[i + 1][0])
+                end_sec = _sec_of_day(nxt_local)
+                if end_sec <= start_sec:
                     # Next reading rolled into the next local day (row landed
                     # right at the local midnight edge) — clip to end-of-day
                     # instead of drawing a negative-length/wraparound segment.
-                    end_min = 1440
+                    end_sec = 86400
             elif is_today:
                 # Last known state for TODAY (local) — only draw up to "now",
                 # not all the way to midnight. Time that hasn't happened yet
-                # has no real reading and shouldn't be colored in.
-                end_min = now_local.hour * 60 + now_local.minute
+                # has no real reading and shouldn't be colored in. NOTE: this
+                # relies on the backend server's own clock being correct. If
+                # this server isn't NTP-synced (common on an offline factory
+                # LAN), `is_today`/`now_local` can be wrong and fall through
+                # to the "past day" branch below, filling the rest of the day
+                # solid — the frontend applies its own independent clip
+                # against the browser's clock as a safety net for exactly
+                # this case, so keep that in place even after this fix.
+                end_sec = _sec_of_day(now_local)
             else:
                 # Last known state for a past (already-finished) local day —
                 # that day is over, so it really did run out the clock.
-                end_min = 1440
-            if end_min > start_min:
-                segments.append(
-                    IoSegment(start_min=start_min, end_min=end_min, status=_normalize_io_state(r.state))
-                )
+                end_sec = 86400
+            if end_sec > start_sec:
+                segments.append(IoSegment(start_sec=start_sec, end_sec=end_sec, status=state))
     else:
         # No stored rows for this date — the device hasn't reported anything
         # for it (a day before the HMI started running, or a future date),

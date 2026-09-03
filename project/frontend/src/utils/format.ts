@@ -31,17 +31,22 @@ function normalizeIoStatus(status: string): IoStatus {
   return status === "run" || status === "stop" || status === "error" ? status : "unknown";
 }
 
-export function fmtTime(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+/** Formats seconds-since-local-midnight as "HH:MM:SS". */
+export function fmtTime(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function fmtDuration(mins: number): string {
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+/** Formats a duration given in seconds, e.g. "45s", "3m 12s", "1h 05m". */
+export function fmtDuration(totalSec: number): string {
+  if (totalSec < 60) return `${Math.round(totalSec)}s`;
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.round(totalSec % 60);
+  if (h > 0) return m > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${h}h`;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 /** Returns today's date as YYYY-MM-DD (local time). */
@@ -87,7 +92,7 @@ export function mapMachine(m: ApiMachine): Machine {
 }
 
 export function mapSegment(s: ApiIoSegment): TimeSegment {
-  return { startMin: s.start_min, endMin: s.end_min, status: normalizeIoStatus(s.status) };
+  return { startSec: s.start_sec, endSec: s.end_sec, status: normalizeIoStatus(s.status) };
 }
 
 /**

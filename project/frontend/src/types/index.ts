@@ -46,8 +46,8 @@ export interface HistoryEntry {
 }
 
 export interface TimeSegment {
-  startMin: number;
-  endMin: number;
+  startSec: number;
+  endSec: number;
   status: IoStatus;
 }
 
@@ -85,8 +85,8 @@ export interface ApiStatusSummary {
 }
 
 export interface ApiIoSegment {
-  start_min: number;
-  end_min: number;
+  start_sec: number;
+  end_sec: number;
   status: IoStatus;
 }
 

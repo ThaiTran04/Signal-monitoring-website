@@ -110,8 +110,11 @@ class StatusSummary(BaseModel):
 
 # ── IO ──
 class IoSegment(BaseModel):
-    start_min: int
-    end_min: int
+    # Seconds since local midnight (0-86400), not minutes — the I/O timeline
+    # chart shows/tooltips down to the second and live-extends in real time,
+    # so minute-only resolution isn't enough.
+    start_sec: int
+    end_sec: int
     status: str
 
 
