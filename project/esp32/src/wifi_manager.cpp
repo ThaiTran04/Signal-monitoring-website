@@ -144,6 +144,32 @@ void updateWiFiState()
     }
 }
 
+// --- Auto-reconnect watchdog ---
+// updateWiFiState() only manages an in-flight connectWiFi() attempt; it does
+// NOT notice a WiFi link that was UP and then drops later. Without this, a
+// real dropped connection (router hiccup, weak signal, interference — very
+// common on-site vs. a quiet dev LAN) leaves the ESP32 sitting disconnected
+// forever: pushDeviceUpdate() fails every cycle, the dashboard flips the
+// device offline, and it never recovers until someone manually re-enters
+// WiFi creds on the HMI. This is also why status/ReadTimeout looked
+// "flapping" on the real machine: every failed push during the drop shows
+// up as a connect error, with nothing retrying the WiFi side of it.
+static unsigned long lastReconnectAttempt = 0;
+static const unsigned long RECONNECT_RETRY_INTERVAL_MS = 5000;
+
+void watchdogWiFi()
+{
+    if (WiFi.status() == WL_CONNECTED) return; // healthy, nothing to do
+    if (wifiState == WIFI_CONNECTING) return;   // already retrying — let updateWiFiState() own this attempt
+    if (strlen(ssid) == 0) return;              // never configured — nothing to reconnect to
+
+    if (millis() - lastReconnectAttempt < RECONNECT_RETRY_INTERVAL_MS) return;
+    lastReconnectAttempt = millis();
+
+    Serial.println(">>> WIFI DROPPED, AUTO-RECONNECTING <<<");
+    connectWiFi(loadWifiModeFlag());
+}
+
 void restoreWifiFieldsToHmi()
 {
     writeASCII(HR_SSID, 20, ssid);

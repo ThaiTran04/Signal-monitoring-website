@@ -22,10 +22,14 @@ from app.database.db import SessionLocal
 from app.models.models import Machine, MachineStatus, ConnectionHistory
 from app.websocket.manager import manager
 
-# ESP32 pushes every 1s (see esp32/main.cpp STATUS_PUSH_INTERVAL_MS). 4-5s is
-# ~4-5 missed pushes, which tolerates normal wifi jitter without being slow to
-# notice a real disconnect.
-OFFLINE_TIMEOUT_SECONDS = 4.5
+# ESP32 pushes every 1s (see esp32/main.cpp STATUS_PUSH_INTERVAL_MS). Was
+# 4.5s (~4-5 missed pushes); bumped to 8s after real on-site WiFi (weaker/
+# more contested than the dev LAN this was tuned on) caused brief multi-
+# second drops to flip devices offline/online repeatedly ("flapping") even
+# though esp32/wifi_manager.cpp's watchdogWiFi() usually reconnects within
+# ~5s on its own. Still notices a real disconnect well within a few missed
+# heartbeats, just without over-reacting to a single bad Wi-Fi moment.
+OFFLINE_TIMEOUT_SECONDS = 8.0
 CHECK_INTERVAL_SECONDS = 1
 
 

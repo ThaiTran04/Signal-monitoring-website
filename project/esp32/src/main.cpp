@@ -60,6 +60,7 @@ void loop()
 
     checkLogout();
     updateWiFiState();
+    watchdogWiFi(); // auto-retries connectWiFi() if a previously-up link drops
     updateServerCheck(); // services requestServerCheck() from processServer() once WiFi finishes connecting
     ensureNtpConfigured();
 

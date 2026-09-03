@@ -13,6 +13,15 @@ extern char staticIP[17], gateway[17], subnet[21], dns[11];
 void connectWiFi(bool useStatic);
 void updateWiFiState(); // call every loop() — non-blocking connect state machine
 
+// Detects a WiFi link that was up and then dropped (router hiccup, out of
+// range, interference — common on a real factory floor, unlike a quiet dev
+// LAN) and automatically retries connectWiFi() using the last-saved
+// creds/mode. updateWiFiState() only babysits an in-flight connect attempt;
+// without this, once the link drops there is nothing left in loop() that
+// ever calls connectWiFi() again, so the device stays disconnected until
+// someone manually re-enters WiFi on the HMI. Call every loop().
+void watchdogWiFi();
+
 void saveWifiCreds(const char *s, const char *p);
 bool loadWifiCreds(char *s, char *p);
 

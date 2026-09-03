@@ -1,0 +1,196 @@
+diff --git a/project/backend/app/api/io.py b/project/backend/app/api/io.py
+index a9b23a7..baf5c59 100644
+--- a/project/backend/app/api/io.py
++++ b/project/backend/app/api/io.py
+@@ -1,4 +1,4 @@
+-from datetime import datetime, timezone, date as date_cls
++from datetime import datetime, timedelta, timezone, date as date_cls
+ from fastapi import APIRouter, Depends, HTTPException, Query
+ from sqlalchemy.orm import Session
+ 
+@@ -9,6 +9,26 @@ from app.services.auth import get_current_user
+ 
+ router = APIRouter(prefix="/api/machines", tags=["io"])
+ 
++# Vietnam has no DST, so a fixed UTC+7 offset is safe/exact year-round.
++# IoHistory.timestamp is always stored in UTC (device.py writes
++# datetime.now(timezone.utc); SQLite then hands it back naive on read — see
++# schemas.py's _as_utc_iso comment). The 24h timeline's `date` query param
++# and its 00h-23h axis are both LOCAL (Vietnam) time, coming from the
++# frontend's todayStr()/date input (browser-local). Without converting,
++# every segment's start/end minute was computed straight from the UTC
++# hour/minute, which silently shows every event 7 hours EARLIER on the
++# chart than when it actually happened (e.g. a 14:24 local event rendered
++# at the "07h" row) — and can shift a segment across the local day
++# boundary entirely, making it look missing from "today".
++VN_UTC_OFFSET = timedelta(hours=7)
++
++
++def _to_local(dt: datetime) -> datetime:
++    """Convert a UTC (naive or aware) DB timestamp to Vietnam local time."""
++    if dt.tzinfo is not None:
++        dt = dt.replace(tzinfo=None)
++    return dt + VN_UTC_OFFSET
++
+ 
+ def _normalize_io_state(state: str | None) -> str:
+     """IO-facing state is one of run/stop/error/unknown only. "offline" is a
+@@ -60,38 +80,50 @@ def get_io_history(
+     if not m:
+         raise HTTPException(status_code=404, detail="Machine not found")
+     try:
+-        date_cls.fromisoformat(date)
++        req_date = date_cls.fromisoformat(date)
+     except ValueError:
+         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+ 
+-    day_start = datetime.fromisoformat(date)
+-    day_end = day_start.replace(hour=23, minute=59, second=59)
++    # `date` is a LOCAL (Vietnam) calendar date. Translate local midnight ->
++    # next local midnight into the matching UTC window before querying, since
++    # IoHistory.timestamp is stored in UTC. Using the naive local boundaries
++    # directly against UTC timestamps (the old code) shifted/dropped rows
++    # near the day's edges by up to 7 hours.
++    local_day_start = datetime.combine(req_date, datetime.min.time())
++    day_start_utc = local_day_start - VN_UTC_OFFSET
++    day_end_utc = day_start_utc + timedelta(days=1, seconds=-1)
+ 
+     rows = (
+         db.query(IoHistory)
+         .filter(IoHistory.machine_id == machine_id,
+-                IoHistory.timestamp >= day_start, IoHistory.timestamp <= day_end)
++                IoHistory.timestamp >= day_start_utc, IoHistory.timestamp <= day_end_utc)
+         .order_by(IoHistory.timestamp.asc())
+         .all()
+     )
+ 
+     if rows:
+         segments = []
++        now_local = _to_local(datetime.now(timezone.utc))
++        is_today = req_date == now_local.date()
+         for i, r in enumerate(rows):
+-            start_min = r.timestamp.hour * 60 + r.timestamp.minute
++            r_local = _to_local(r.timestamp)
++            start_min = r_local.hour * 60 + r_local.minute
+             if i + 1 < len(rows):
+-                nxt = rows[i + 1]
+-                end_min = nxt.timestamp.hour * 60 + nxt.timestamp.minute
+-            elif date == datetime.now(timezone.utc).date().isoformat():
+-                # Last known state for TODAY — only draw up to "now", not all
+-                # the way to midnight. Time that hasn't happened yet has no
+-                # real reading and shouldn't be colored in. UTC to match how
+-                # timestamps are written in device.py (datetime.now(timezone.utc)).
+-                now_utc = datetime.now(timezone.utc)
+-                end_min = now_utc.hour * 60 + now_utc.minute
++                nxt_local = _to_local(rows[i + 1].timestamp)
++                end_min = nxt_local.hour * 60 + nxt_local.minute
++                if end_min <= start_min:
++                    # Next reading rolled into the next local day (row landed
++                    # right at the local midnight edge) — clip to end-of-day
++                    # instead of drawing a negative-length/wraparound segment.
++                    end_min = 1440
++            elif is_today:
++                # Last known state for TODAY (local) — only draw up to "now",
++                # not all the way to midnight. Time that hasn't happened yet
++                # has no real reading and shouldn't be colored in.
++                end_min = now_local.hour * 60 + now_local.minute
+             else:
+-                # Last known state for a past (already-finished) day — that
+-                # day is over, so it really did run out the clock.
++                # Last known state for a past (already-finished) local day —
++                # that day is over, so it really did run out the clock.
+                 end_min = 1440
+             if end_min > start_min:
+                 segments.append(
+diff --git a/project/backend/app/services/offline_watcher.py b/project/backend/app/services/offline_watcher.py
+index 8ce26d4..51b9438 100644
+--- a/project/backend/app/services/offline_watcher.py
++++ b/project/backend/app/services/offline_watcher.py
+@@ -22,10 +22,14 @@ from app.database.db import SessionLocal
+ from app.models.models import Machine, MachineStatus, ConnectionHistory
+ from app.websocket.manager import manager
+ 
+-# ESP32 pushes every 1s (see esp32/main.cpp STATUS_PUSH_INTERVAL_MS). 4-5s is
+-# ~4-5 missed pushes, which tolerates normal wifi jitter without being slow to
+-# notice a real disconnect.
+-OFFLINE_TIMEOUT_SECONDS = 4.5
++# ESP32 pushes every 1s (see esp32/main.cpp STATUS_PUSH_INTERVAL_MS). Was
++# 4.5s (~4-5 missed pushes); bumped to 8s after real on-site WiFi (weaker/
++# more contested than the dev LAN this was tuned on) caused brief multi-
++# second drops to flip devices offline/online repeatedly ("flapping") even
++# though esp32/wifi_manager.cpp's watchdogWiFi() usually reconnects within
++# ~5s on its own. Still notices a real disconnect well within a few missed
++# heartbeats, just without over-reacting to a single bad Wi-Fi moment.
++OFFLINE_TIMEOUT_SECONDS = 8.0
+ CHECK_INTERVAL_SECONDS = 1
+ 
+ 
+diff --git a/project/esp32/include/wifi_manager.h b/project/esp32/include/wifi_manager.h
+index d7070e5..a5e0d48 100644
+--- a/project/esp32/include/wifi_manager.h
++++ b/project/esp32/include/wifi_manager.h
+@@ -13,6 +13,15 @@ extern char staticIP[17], gateway[17], subnet[21], dns[11];
+ void connectWiFi(bool useStatic);
+ void updateWiFiState(); // call every loop() — non-blocking connect state machine
+ 
++// Detects a WiFi link that was up and then dropped (router hiccup, out of
++// range, interference — common on a real factory floor, unlike a quiet dev
++// LAN) and automatically retries connectWiFi() using the last-saved
++// creds/mode. updateWiFiState() only babysits an in-flight connect attempt;
++// without this, once the link drops there is nothing left in loop() that
++// ever calls connectWiFi() again, so the device stays disconnected until
++// someone manually re-enters WiFi on the HMI. Call every loop().
++void watchdogWiFi();
++
+ void saveWifiCreds(const char *s, const char *p);
+ bool loadWifiCreds(char *s, char *p);
+ 
+diff --git a/project/esp32/src/main.cpp b/project/esp32/src/main.cpp
+index 71fa9d8..34cc1c8 100644
+--- a/project/esp32/src/main.cpp
++++ b/project/esp32/src/main.cpp
+@@ -60,6 +60,7 @@ void loop()
+ 
+     checkLogout();
+     updateWiFiState();
++    watchdogWiFi(); // auto-retries connectWiFi() if a previously-up link drops
+     updateServerCheck(); // services requestServerCheck() from processServer() once WiFi finishes connecting
+     ensureNtpConfigured();
+ 
+diff --git a/project/esp32/src/wifi_manager.cpp b/project/esp32/src/wifi_manager.cpp
+index e47125d..6276630 100644
+--- a/project/esp32/src/wifi_manager.cpp
++++ b/project/esp32/src/wifi_manager.cpp
+@@ -144,6 +144,32 @@ void updateWiFiState()
+     }
+ }
+ 
++// --- Auto-reconnect watchdog ---
++// updateWiFiState() only manages an in-flight connectWiFi() attempt; it does
++// NOT notice a WiFi link that was UP and then drops later. Without this, a
++// real dropped connection (router hiccup, weak signal, interference — very
++// common on-site vs. a quiet dev LAN) leaves the ESP32 sitting disconnected
++// forever: pushDeviceUpdate() fails every cycle, the dashboard flips the
++// device offline, and it never recovers until someone manually re-enters
++// WiFi creds on the HMI. This is also why status/ReadTimeout looked
++// "flapping" on the real machine: every failed push during the drop shows
++// up as a connect error, with nothing retrying the WiFi side of it.
++static unsigned long lastReconnectAttempt = 0;
++static const unsigned long RECONNECT_RETRY_INTERVAL_MS = 5000;
++
++void watchdogWiFi()
++{
++    if (WiFi.status() == WL_CONNECTED) return; // healthy, nothing to do
++    if (wifiState == WIFI_CONNECTING) return;   // already retrying — let updateWiFiState() own this attempt
++    if (strlen(ssid) == 0) return;              // never configured — nothing to reconnect to
++
++    if (millis() - lastReconnectAttempt < RECONNECT_RETRY_INTERVAL_MS) return;
++    lastReconnectAttempt = millis();
++
++    Serial.println(">>> WIFI DROPPED, AUTO-RECONNECTING <<<");
++    connectWiFi(loadWifiModeFlag());
++}
++
+ void restoreWifiFieldsToHmi()
+ {
+     writeASCII(HR_SSID, 20, ssid);
