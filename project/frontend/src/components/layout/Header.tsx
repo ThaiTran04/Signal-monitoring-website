@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, Search, User } from "lucide-react";
 import { MONO, S } from "../../utils/constants";
+import { ioStatusOf } from "../../utils/format";
 import type { Machine, Page } from "../../types";
 
 export interface HeaderProps {
@@ -71,24 +72,18 @@ export function Header({ page, machines, username, onBack, onSelect }: HeaderPro
           {open && results.length > 0 && (
             <div className="absolute top-full right-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
               {results.map((m) => {
-                // Global machine search only cares about connectivity, same
-                // concept as Setup's "Connected" count — binary Online/Offline,
-                // never the run/stop/error IO beacon state.
-                const isOnline = m.status !== "offline";
+                const ioStatus = ioStatusOf(m);
                 return (
                   <button
                     key={m.id}
                     onMouseDown={() => pick(m)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left transition-colors"
                   >
-                    <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ background: isOnline ? S.run.color : S.offline.color }}
-                    />
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: S[ioStatus].color }} />
                     <span style={{ fontFamily: MONO }} className="flex-1 text-gray-800">
                       {m.name}
                     </span>
-                    <span className="text-gray-400">{isOnline ? "Online" : "Offline"}</span>
+                    <span className="text-gray-400">{S[ioStatus].label}</span>
                   </button>
                 );
               })}

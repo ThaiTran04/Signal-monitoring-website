@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { IoLights } from "../components/shared/IoLights";
 import { MONO, S } from "../utils/constants";
 import type { Machine } from "../types";
 
@@ -96,7 +95,7 @@ export function SetupPage({ machines, loading, error }: SetupPageProps) {
           <table className="w-full text-xs whitespace-nowrap">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                {["No.", "Machine", "MAC Address", "IP Address", "Code Ver.", "HMI Ver.", "Status", "IO", "Login"].map(
+                {["No.", "Machine", "MAC Address", "IP Address", "Code Ver.", "HMI Ver.", "Status", "Login"].map(
                   (col) => (
                     <th
                       key={col}
@@ -111,52 +110,58 @@ export function SetupPage({ machines, loading, error }: SetupPageProps) {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-8 text-center text-xs text-gray-400">
+                  <td colSpan={8} className="px-5 py-8 text-center text-xs text-gray-400">
                     No devices match the search
                   </td>
                 </tr>
               ) : (
-                rows.map((m) => (
-                  <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-2.5 text-gray-400" style={{ fontFamily: MONO }}>
-                      {m.id}
-                    </td>
-                    <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ fontFamily: MONO }}>
-                      {m.name}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
-                      {m.mac}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600" style={{ fontFamily: MONO }}>
-                      {m.ip}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
-                      {m.codeVersion}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
-                      {m.hmiVersion}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className="w-3 h-3 rounded-full inline-block"
-                        style={{ background: S[m.status].color }}
-                        title={S[m.status].label}
-                      />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <IoLights machine={m} size={8} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          m.hmiLogin ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {m.hmiLogin ? "Login" : "Logout"}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                rows.map((m) => {
+                  const isConnected = m.status !== "offline";
+                  return (
+                    <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-2.5 text-gray-400" style={{ fontFamily: MONO }}>
+                        {m.id}
+                      </td>
+                      <td className="px-4 py-2.5 font-semibold text-gray-800" style={{ fontFamily: MONO }}>
+                        {m.name}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
+                        {m.mac}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600" style={{ fontFamily: MONO }}>
+                        {m.ip}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
+                        {m.codeVersion}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500" style={{ fontFamily: MONO }}>
+                        {m.hmiVersion}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            isConnected ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ background: isConnected ? S.run.color : S.offline.color }}
+                          />
+                          {isConnected ? "Connected" : "Disconnected"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            m.hmiLogin ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {m.hmiLogin ? "Login" : "Logout"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
