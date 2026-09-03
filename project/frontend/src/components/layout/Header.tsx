@@ -70,19 +70,28 @@ export function Header({ page, machines, username, onBack, onSelect }: HeaderPro
           />
           {open && results.length > 0 && (
             <div className="absolute top-full right-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-50 overflow-hidden">
-              {results.map((m) => (
-                <button
-                  key={m.id}
-                  onMouseDown={() => pick(m)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left transition-colors"
-                >
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: S[m.status].color }} />
-                  <span style={{ fontFamily: MONO }} className="flex-1 text-gray-800">
-                    {m.name}
-                  </span>
-                  <span className="text-gray-400">{S[m.status].label}</span>
-                </button>
-              ))}
+              {results.map((m) => {
+                // Global machine search only cares about connectivity, same
+                // concept as Setup's "Connected" count — binary Online/Offline,
+                // never the run/stop/error IO beacon state.
+                const isOnline = m.status !== "offline";
+                return (
+                  <button
+                    key={m.id}
+                    onMouseDown={() => pick(m)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left transition-colors"
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: isOnline ? S.run.color : S.offline.color }}
+                    />
+                    <span style={{ fontFamily: MONO }} className="flex-1 text-gray-800">
+                      {m.name}
+                    </span>
+                    <span className="text-gray-400">{isOnline ? "Online" : "Offline"}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
