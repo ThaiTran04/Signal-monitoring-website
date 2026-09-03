@@ -206,3 +206,51 @@ void pushDeviceUpdate()
 
     http.end();
 }
+
+// Shared by pushHmiLogin()/pushHmiLogout() below — both just POST a small
+// JSON body to a fixed path and don't care about the response beyond
+// logging it, so there's no point duplicating the HTTPClient boilerplate.
+static void postHmiLoginState(const char *path, const char *payload)
+{
+    if (strlen(savedServerIP) == 0 || savedServerPort == 0) return;
+    if (WiFi.status() != WL_CONNECTED) return;
+
+    char url[64];
+    buildServerUrl(path, url, sizeof(url));
+
+    HTTPClient http;
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
+
+    if (!http.begin(url))
+    {
+        Serial.printf(">>> %s FAILED (begin() error) <<<\n", path);
+        return;
+    }
+
+    http.addHeader("Content-Type", "application/json");
+    int code = http.POST((uint8_t *)payload, strlen(payload));
+    Serial.printf(">>> %s %s (HTTP %d)\n", path, (code == 200) ? "OK" : "FAILED", code);
+    if (code < 0)
+    {
+        Serial.printf("    HTTPClient error: %s\n", http.errorToString(code).c_str());
+    }
+    http.end();
+}
+
+void pushHmiLogin(const char *username)
+{
+    String mac = WiFi.macAddress();
+    char payload[128];
+    snprintf(payload, sizeof(payload),
+        "{\"mac\":\"%s\",\"username\":\"%s\"}", mac.c_str(), username);
+    postHmiLoginState("/api/device/hmi-login", payload);
+}
+
+void pushHmiLogout()
+{
+    String mac = WiFi.macAddress();
+    char payload[64];
+    snprintf(payload, sizeof(payload), "{\"mac\":\"%s\"}", mac.c_str());
+    postHmiLoginState("/api/device/hmi-logout", payload);
+}

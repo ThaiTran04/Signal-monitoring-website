@@ -131,7 +131,7 @@ export interface ApiMeResponse {
 
 // ─── WebSocket realtime payload ──────────────────────────────────────────────
 
-export interface WsMachineUpdate {
+export interface WsMachineStatusUpdate {
   type: "machine_update";
   machine_id: number;
   machine_name: string;
@@ -142,3 +142,17 @@ export interface WsMachineUpdate {
   io_input4?: boolean | null;
   timestamp: string;
 }
+
+/** Sent by the backend when the ESP32/HMI panel itself reports an operator
+ * logging in or out on the physical touchscreen (see backend
+ * app/api/device.py: /api/device/hmi-login, /api/device/hmi-logout).
+ * Independent of the website's own admin/JWT session. */
+export interface WsHmiLoginUpdate {
+  type: "hmi_login_update";
+  machine_id: number;
+  machine_name: string;
+  hmi_login: boolean;
+  timestamp: string;
+}
+
+export type WsMachineUpdate = WsMachineStatusUpdate | WsHmiLoginUpdate;

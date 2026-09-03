@@ -87,6 +87,17 @@ const char *deriveMachineStatus();
 // the STATUS_PUSH_INTERVAL_MS cadence. See the blocking-call note above.
 void pushDeviceUpdate();
 
+// POSTs to /api/device/hmi-login / /api/device/hmi-logout — tells the
+// backend that an operator just logged in/out on THIS panel's physical
+// touchscreen (see screens.cpp: processLogin() -> SCREEN_MENU, and
+// checkLogout()). Drives Machine.hmi_login, i.e. the "Login"/"Logout" badge
+// on the website's Setup > Device Management table. Fire-and-forget: best
+// effort, no retry — if it fails, the HMI still logs the operator in/out
+// locally, only the website's badge stays stale until the next successful
+// call. `username` is what the operator typed on the LOGIN screen.
+void pushHmiLogin(const char *username);
+void pushHmiLogout();
+
 // Writes savedServerIP/savedServerPort back into the HMI's SERVER-screen
 // fields (HR_SERVER_IP, HR_SERVER_PORT) so the operator sees the
 // previously-saved values instead of a blank field next time they open that

@@ -57,6 +57,14 @@ export function useMachines(enabled: boolean = true): UseMachinesResult {
   }, [reloadTick, enabled]);
 
   const { connected: wsConnected } = useWebSocket((msg) => {
+    if (msg.type === "hmi_login_update") {
+      // ESP32/HMI panel reported an operator login/logout on the physical
+      // touchscreen — only the Login badge changes, status/IO are untouched.
+      setMachines((prev) =>
+        prev.map((m) => (m.id === msg.machine_id ? { ...m, hmiLogin: msg.hmi_login } : m))
+      );
+      return;
+    }
     setMachines((prev) =>
       prev.map((m) =>
         m.id === msg.machine_id

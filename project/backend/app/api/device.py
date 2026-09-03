@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.database.db import get_db
-from app.models.models import Machine, MachineStatus, IoHistory, ConnectionHistory
-from app.schemas.schemas import DeviceUpdatePayload
+from app.models.models import Machine, MachineStatus, IoHistory, ConnectionHistory, HmiLoginHistory
+from app.schemas.schemas import DeviceUpdatePayload, DeviceHmiLoginPayload, DeviceHmiLogoutPayload
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/api/device", tags=["device"])
@@ -135,3 +135,80 @@ async def device_update(payload: DeviceUpdatePayload, db: Session = Depends(get_
     })
 
     return {"ok": True, "machine_id": result["machine_id"], "status": result["status"]}
+
+
+@router.post("/hmi-login")
+async def device_hmi_login(payload: DeviceHmiLoginPayload, db: Session = Depends(get_db)):
+    """Called by the ESP32/HMI firmware the moment an operator successfully
+    logs in on the physical touchscreen (screens.cpp::processLogin() ->
+    SCREEN_MENU). This is completely separate from the website's own
+    admin/JWT login — it tracks whether *that machine's HMI panel* currently
+    has an operator session open, which is what the Setup page's
+    "Login"/"Logout" badge and the "Login: HMI sessions active" summary
+    card reflect (Machine.hmi_login)."""
+    now = datetime.now(timezone.utc)
+
+    def _write():
+        m = db.query(Machine).filter(Machine.mac_address == payload.mac).first()
+        if not m:
+            return None
+        open_row = (
+            db.query(HmiLoginHistory)
+            .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
+            .first()
+        )
+        if not open_row:
+            db.add(HmiLoginHistory(machine_id=m.id, username=payload.username, login_at=now))
+        m.hmi_login = True
+        db.commit()
+        return {"machine_id": m.id, "machine_name": m.machine_name}
+
+    result = await run_in_threadpool(_write)
+    if not result:
+        return {"ok": False, "error": "unknown machine (mac not registered)"}
+
+    await manager.broadcast({
+        "type": "hmi_login_update",
+        "machine_id": result["machine_id"],
+        "machine_name": result["machine_name"],
+        "hmi_login": True,
+        "timestamp": now.isoformat(),
+    })
+    return {"ok": True, "machine_id": result["machine_id"]}
+
+
+@router.post("/hmi-logout")
+async def device_hmi_logout(payload: DeviceHmiLogoutPayload, db: Session = Depends(get_db)):
+    """Called by the ESP32/HMI firmware when the operator logs out on the
+    touchscreen (screens.cpp::checkLogout() -> back to SCREEN_LOGIN), or
+    whenever the panel returns to the login screen for any reason. Mirrors
+    device_hmi_login() above."""
+    now = datetime.now(timezone.utc)
+
+    def _write():
+        m = db.query(Machine).filter(Machine.mac_address == payload.mac).first()
+        if not m:
+            return None
+        open_rows = (
+            db.query(HmiLoginHistory)
+            .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
+            .all()
+        )
+        for row in open_rows:
+            row.logout_at = now
+        m.hmi_login = False
+        db.commit()
+        return {"machine_id": m.id, "machine_name": m.machine_name}
+
+    result = await run_in_threadpool(_write)
+    if not result:
+        return {"ok": False, "error": "unknown machine (mac not registered)"}
+
+    await manager.broadcast({
+        "type": "hmi_login_update",
+        "machine_id": result["machine_id"],
+        "machine_name": result["machine_name"],
+        "hmi_login": False,
+        "timestamp": now.isoformat(),
+    })
+    return {"ok": True, "machine_id": result["machine_id"]}

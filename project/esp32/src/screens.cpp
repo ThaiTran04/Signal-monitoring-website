@@ -16,7 +16,7 @@ void processLogin()
     if      (strlen(username) == 0)              mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);
     else if (strlen(password) == 0)               mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_PASS);
     else if (strcmp(username, USER_ADMIN) != 0)   mb.Hreg(HR_LOGIN_RESULT, LOGIN_WRONG);
-    else if (strcmp(password, PASS_MENU) == 0)    screenJumpTo(SCREEN_MENU);
+    else if (strcmp(password, PASS_MENU) == 0)    { pushHmiLogin(username); screenJumpTo(SCREEN_MENU); }
     else if (strcmp(password, PASS_WIFI) == 0)    screenJumpTo(SCREEN_DYNAMIC_IP);
     else                                            mb.Hreg(HR_LOGIN_RESULT, LOGIN_WRONG);
 
@@ -29,6 +29,7 @@ void checkLogout()
     uint16_t v = mb.Hreg(HR_LOGOUT);
     if (v == 32 && lastLogoutValue != 32)
     {
+        pushHmiLogout();
         clearBuffer(username, sizeof(username));
         clearBuffer(password, sizeof(password));
         mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);

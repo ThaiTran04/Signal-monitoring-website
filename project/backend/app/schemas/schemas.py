@@ -161,6 +161,15 @@ class DeviceIoPayload(BaseModel):
     input4: Optional[int] = 0
 
 
+class DeviceHmiLoginPayload(BaseModel):
+    mac: str
+    username: str
+
+
+class DeviceHmiLogoutPayload(BaseModel):
+    mac: str
+
+
 class DeviceUpdatePayload(BaseModel):
     machine: str
     mac: str

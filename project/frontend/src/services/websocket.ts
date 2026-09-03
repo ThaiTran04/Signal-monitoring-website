@@ -38,7 +38,7 @@ class RealtimeSocket {
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as WsMachineUpdate;
-        if (msg?.type === "machine_update") {
+        if (msg?.type === "machine_update" || msg?.type === "hmi_login_update") {
           this.listeners.forEach((cb) => cb(msg));
         }
       } catch {

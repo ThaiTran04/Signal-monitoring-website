@@ -1,0 +1,371 @@
+diff --git a/project/backend/app/api/auth.py b/project/backend/app/api/auth.py
+index a2bff80..1d0f2e7 100644
+--- a/project/backend/app/api/auth.py
++++ b/project/backend/app/api/auth.py
+@@ -1,84 +1,26 @@
+-from datetime import datetime, timezone
+ from fastapi import APIRouter, Depends, HTTPException, status
+ from sqlalchemy.orm import Session
+ 
+ from app.database.db import get_db
+-from app.models.models import User, Machine, HmiLoginHistory
++from app.models.models import User
+ from app.schemas.schemas import LoginRequest, LoginResponse, MeResponse
+ from app.services.auth import verify_password, create_access_token, get_current_user
+-from app.websocket.manager import manager
+ 
+ router = APIRouter(prefix="/api", tags=["auth"])
+ 
+ 
+ @router.post("/login", response_model=LoginResponse)
+-async def login(payload: LoginRequest, db: Session = Depends(get_db)):
++def login(payload: LoginRequest, db: Session = Depends(get_db)):
+     user = db.query(User).filter(User.username == payload.username).first()
+     if not user or not verify_password(payload.password, user.password_hash):
+         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+     token = create_access_token(user.username)
+-
+-    # Mark every registered machine's HMI session as logged-in for this admin
+-    # user, and open a HmiLoginHistory row per machine (skipped for machines
+-    # that already have an open row for this user, so re-logging-in from a
+-    # second tab doesn't spam duplicate history entries). This is what
+-    # drives the "Login"/"Logout" badge in Setup > Device Management and the
+-    # "Login" summary card — both simply read Machine.hmi_login.
+-    now = datetime.now(timezone.utc)
+-    machines = db.query(Machine).all()
+-    for m in machines:
+-        open_row = (
+-            db.query(HmiLoginHistory)
+-            .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
+-            .first()
+-        )
+-        if not open_row:
+-            db.add(HmiLoginHistory(machine_id=m.id, username=user.username, login_at=now))
+-        m.hmi_login = True
+-    db.commit()
+-
+-    for m in machines:
+-        await manager.broadcast({
+-            "type": "hmi_login_update",
+-            "machine_id": m.id,
+-            "machine_name": m.machine_name,
+-            "hmi_login": True,
+-            "timestamp": now.isoformat(),
+-        })
+-
+     return LoginResponse(access_token=token, username=user.username, role=user.role)
+ 
+ 
+ @router.post("/logout")
+-async def logout(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+-    # Close out every open HMI session for this user and flip Machine.hmi_login
+-    # back to False, so Setup > Device Management reflects "Logout" again as
+-    # soon as the admin signs out.
+-    now = datetime.now(timezone.utc)
+-    open_rows = (
+-        db.query(HmiLoginHistory)
+-        .filter(HmiLoginHistory.username == user.username, HmiLoginHistory.logout_at.is_(None))
+-        .all()
+-    )
+-    machine_ids = {row.machine_id for row in open_rows}
+-    for row in open_rows:
+-        row.logout_at = now
+-    if machine_ids:
+-        db.query(Machine).filter(Machine.id.in_(machine_ids)).update(
+-            {Machine.hmi_login: False}, synchronize_session=False
+-        )
+-    db.commit()
+-
+-    for machine_id in machine_ids:
+-        m = db.query(Machine).filter(Machine.id == machine_id).first()
+-        await manager.broadcast({
+-            "type": "hmi_login_update",
+-            "machine_id": machine_id,
+-            "machine_name": m.machine_name if m else None,
+-            "hmi_login": False,
+-            "timestamp": now.isoformat(),
+-        })
+-
++def logout(user: User = Depends(get_current_user)):
++    # Stateless JWT: logout is handled client-side by discarding the token.
+     return {"ok": True}
+ 
+ 
+diff --git a/project/backend/app/api/device.py b/project/backend/app/api/device.py
+index 2f88eb1..024952a 100644
+--- a/project/backend/app/api/device.py
++++ b/project/backend/app/api/device.py
+@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
+ from starlette.concurrency import run_in_threadpool
+ 
+ from app.database.db import get_db
+-from app.models.models import Machine, MachineStatus, IoHistory, ConnectionHistory
+-from app.schemas.schemas import DeviceUpdatePayload
++from app.models.models import Machine, MachineStatus, IoHistory, ConnectionHistory, HmiLoginHistory
++from app.schemas.schemas import DeviceUpdatePayload, DeviceHmiLoginPayload, DeviceHmiLogoutPayload
+ from app.websocket.manager import manager
+ 
+ router = APIRouter(prefix="/api/device", tags=["device"])
+@@ -135,3 +135,80 @@ async def device_update(payload: DeviceUpdatePayload, db: Session = Depends(get_
+     })
+ 
+     return {"ok": True, "machine_id": result["machine_id"], "status": result["status"]}
++
++
++@router.post("/hmi-login")
++async def device_hmi_login(payload: DeviceHmiLoginPayload, db: Session = Depends(get_db)):
++    """Called by the ESP32/HMI firmware the moment an operator successfully
++    logs in on the physical touchscreen (screens.cpp::processLogin() ->
++    SCREEN_MENU). This is completely separate from the website's own
++    admin/JWT login — it tracks whether *that machine's HMI panel* currently
++    has an operator session open, which is what the Setup page's
++    "Login"/"Logout" badge and the "Login: HMI sessions active" summary
++    card reflect (Machine.hmi_login)."""
++    now = datetime.now(timezone.utc)
++
++    def _write():
++        m = db.query(Machine).filter(Machine.mac_address == payload.mac).first()
++        if not m:
++            return None
++        open_row = (
++            db.query(HmiLoginHistory)
++            .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
++            .first()
++        )
++        if not open_row:
++            db.add(HmiLoginHistory(machine_id=m.id, username=payload.username, login_at=now))
++        m.hmi_login = True
++        db.commit()
++        return {"machine_id": m.id, "machine_name": m.machine_name}
++
++    result = await run_in_threadpool(_write)
++    if not result:
++        return {"ok": False, "error": "unknown machine (mac not registered)"}
++
++    await manager.broadcast({
++        "type": "hmi_login_update",
++        "machine_id": result["machine_id"],
++        "machine_name": result["machine_name"],
++        "hmi_login": True,
++        "timestamp": now.isoformat(),
++    })
++    return {"ok": True, "machine_id": result["machine_id"]}
++
++
++@router.post("/hmi-logout")
++async def device_hmi_logout(payload: DeviceHmiLogoutPayload, db: Session = Depends(get_db)):
++    """Called by the ESP32/HMI firmware when the operator logs out on the
++    touchscreen (screens.cpp::checkLogout() -> back to SCREEN_LOGIN), or
++    whenever the panel returns to the login screen for any reason. Mirrors
++    device_hmi_login() above."""
++    now = datetime.now(timezone.utc)
++
++    def _write():
++        m = db.query(Machine).filter(Machine.mac_address == payload.mac).first()
++        if not m:
++            return None
++        open_rows = (
++            db.query(HmiLoginHistory)
++            .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
++            .all()
++        )
++        for row in open_rows:
++            row.logout_at = now
++        m.hmi_login = False
++        db.commit()
++        return {"machine_id": m.id, "machine_name": m.machine_name}
++
++    result = await run_in_threadpool(_write)
++    if not result:
++        return {"ok": False, "error": "unknown machine (mac not registered)"}
++
++    await manager.broadcast({
++        "type": "hmi_login_update",
++        "machine_id": result["machine_id"],
++        "machine_name": result["machine_name"],
++        "hmi_login": False,
++        "timestamp": now.isoformat(),
++    })
++    return {"ok": True, "machine_id": result["machine_id"]}
+diff --git a/project/backend/app/schemas/schemas.py b/project/backend/app/schemas/schemas.py
+index d6d9ec9..398a936 100644
+--- a/project/backend/app/schemas/schemas.py
++++ b/project/backend/app/schemas/schemas.py
+@@ -161,6 +161,15 @@ class DeviceIoPayload(BaseModel):
+     input4: Optional[int] = 0
+ 
+ 
++class DeviceHmiLoginPayload(BaseModel):
++    mac: str
++    username: str
++
++
++class DeviceHmiLogoutPayload(BaseModel):
++    mac: str
++
++
+ class DeviceUpdatePayload(BaseModel):
+     machine: str
+     mac: str
+diff --git a/project/esp32/include/server_client.h b/project/esp32/include/server_client.h
+index 7d255b6..723f153 100644
+--- a/project/esp32/include/server_client.h
++++ b/project/esp32/include/server_client.h
+@@ -87,6 +87,17 @@ const char *deriveMachineStatus();
+ // the STATUS_PUSH_INTERVAL_MS cadence. See the blocking-call note above.
+ void pushDeviceUpdate();
+ 
++// POSTs to /api/device/hmi-login / /api/device/hmi-logout — tells the
++// backend that an operator just logged in/out on THIS panel's physical
++// touchscreen (see screens.cpp: processLogin() -> SCREEN_MENU, and
++// checkLogout()). Drives Machine.hmi_login, i.e. the "Login"/"Logout" badge
++// on the website's Setup > Device Management table. Fire-and-forget: best
++// effort, no retry — if it fails, the HMI still logs the operator in/out
++// locally, only the website's badge stays stale until the next successful
++// call. `username` is what the operator typed on the LOGIN screen.
++void pushHmiLogin(const char *username);
++void pushHmiLogout();
++
+ // Writes savedServerIP/savedServerPort back into the HMI's SERVER-screen
+ // fields (HR_SERVER_IP, HR_SERVER_PORT) so the operator sees the
+ // previously-saved values instead of a blank field next time they open that
+diff --git a/project/esp32/src/screens.cpp b/project/esp32/src/screens.cpp
+index f1d415b..a29d2ad 100644
+--- a/project/esp32/src/screens.cpp
++++ b/project/esp32/src/screens.cpp
+@@ -16,7 +16,7 @@ void processLogin()
+     if      (strlen(username) == 0)              mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);
+     else if (strlen(password) == 0)               mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_PASS);
+     else if (strcmp(username, USER_ADMIN) != 0)   mb.Hreg(HR_LOGIN_RESULT, LOGIN_WRONG);
+-    else if (strcmp(password, PASS_MENU) == 0)    screenJumpTo(SCREEN_MENU);
++    else if (strcmp(password, PASS_MENU) == 0)    { pushHmiLogin(username); screenJumpTo(SCREEN_MENU); }
+     else if (strcmp(password, PASS_WIFI) == 0)    screenJumpTo(SCREEN_DYNAMIC_IP);
+     else                                            mb.Hreg(HR_LOGIN_RESULT, LOGIN_WRONG);
+ 
+@@ -29,6 +29,7 @@ void checkLogout()
+     uint16_t v = mb.Hreg(HR_LOGOUT);
+     if (v == 32 && lastLogoutValue != 32)
+     {
++        pushHmiLogout();
+         clearBuffer(username, sizeof(username));
+         clearBuffer(password, sizeof(password));
+         mb.Hreg(HR_LOGIN_RESULT, LOGIN_INPUT_USER);
+diff --git a/project/esp32/src/server_client.cpp b/project/esp32/src/server_client.cpp
+index cb44d6b..926bf7a 100644
+--- a/project/esp32/src/server_client.cpp
++++ b/project/esp32/src/server_client.cpp
+@@ -206,3 +206,51 @@ void pushDeviceUpdate()
+ 
+     http.end();
+ }
++
++// Shared by pushHmiLogin()/pushHmiLogout() below — both just POST a small
++// JSON body to a fixed path and don't care about the response beyond
++// logging it, so there's no point duplicating the HTTPClient boilerplate.
++static void postHmiLoginState(const char *path, const char *payload)
++{
++    if (strlen(savedServerIP) == 0 || savedServerPort == 0) return;
++    if (WiFi.status() != WL_CONNECTED) return;
++
++    char url[64];
++    buildServerUrl(path, url, sizeof(url));
++
++    HTTPClient http;
++    http.setConnectTimeout(1500);
++    http.setTimeout(1500);
++
++    if (!http.begin(url))
++    {
++        Serial.printf(">>> %s FAILED (begin() error) <<<\n", path);
++        return;
++    }
++
++    http.addHeader("Content-Type", "application/json");
++    int code = http.POST((uint8_t *)payload, strlen(payload));
++    Serial.printf(">>> %s %s (HTTP %d)\n", path, (code == 200) ? "OK" : "FAILED", code);
++    if (code < 0)
++    {
++        Serial.printf("    HTTPClient error: %s\n", http.errorToString(code).c_str());
++    }
++    http.end();
++}
++
++void pushHmiLogin(const char *username)
++{
++    String mac = WiFi.macAddress();
++    char payload[128];
++    snprintf(payload, sizeof(payload),
++        "{\"mac\":\"%s\",\"username\":\"%s\"}", mac.c_str(), username);
++    postHmiLoginState("/api/device/hmi-login", payload);
++}
++
++void pushHmiLogout()
++{
++    String mac = WiFi.macAddress();
++    char payload[64];
++    snprintf(payload, sizeof(payload), "{\"mac\":\"%s\"}", mac.c_str());
++    postHmiLoginState("/api/device/hmi-logout", payload);
++}
+diff --git a/project/frontend/src/hooks/useMachines.ts b/project/frontend/src/hooks/useMachines.ts
+index c01245c..cf6e1d5 100644
+--- a/project/frontend/src/hooks/useMachines.ts
++++ b/project/frontend/src/hooks/useMachines.ts
+@@ -57,6 +57,14 @@ export function useMachines(enabled: boolean = true): UseMachinesResult {
+   }, [reloadTick, enabled]);
+ 
+   const { connected: wsConnected } = useWebSocket((msg) => {
++    if (msg.type === "hmi_login_update") {
++      // ESP32/HMI panel reported an operator login/logout on the physical
++      // touchscreen — only the Login badge changes, status/IO are untouched.
++      setMachines((prev) =>
++        prev.map((m) => (m.id === msg.machine_id ? { ...m, hmiLogin: msg.hmi_login } : m))
++      );
++      return;
++    }
+     setMachines((prev) =>
+       prev.map((m) =>
+         m.id === msg.machine_id
+diff --git a/project/frontend/src/services/websocket.ts b/project/frontend/src/services/websocket.ts
+index c4a47d7..a7ff3c3 100644
+--- a/project/frontend/src/services/websocket.ts
++++ b/project/frontend/src/services/websocket.ts
+@@ -38,7 +38,7 @@ class RealtimeSocket {
+     this.ws.onmessage = (event) => {
+       try {
+         const msg = JSON.parse(event.data) as WsMachineUpdate;
+-        if (msg?.type === "machine_update") {
++        if (msg?.type === "machine_update" || msg?.type === "hmi_login_update") {
+           this.listeners.forEach((cb) => cb(msg));
+         }
+       } catch {
+diff --git a/project/frontend/src/types/index.ts b/project/frontend/src/types/index.ts
+index bb52dd1..35988af 100644
+--- a/project/frontend/src/types/index.ts
++++ b/project/frontend/src/types/index.ts
+@@ -131,7 +131,7 @@ export interface ApiMeResponse {
+ 
+ // ─── WebSocket realtime payload ──────────────────────────────────────────────
+ 
+-export interface WsMachineUpdate {
++export interface WsMachineStatusUpdate {
+   type: "machine_update";
+   machine_id: number;
+   machine_name: string;
+@@ -142,3 +142,17 @@ export interface WsMachineUpdate {
+   io_input4?: boolean | null;
+   timestamp: string;
+ }
++
++/** Sent by the backend when the ESP32/HMI panel itself reports an operator
++ * logging in or out on the physical touchscreen (see backend
++ * app/api/device.py: /api/device/hmi-login, /api/device/hmi-logout).
++ * Independent of the website's own admin/JWT session. */
++export interface WsHmiLoginUpdate {
++  type: "hmi_login_update";
++  machine_id: number;
++  machine_name: string;
++  hmi_login: boolean;
++  timestamp: string;
++}
++
++export type WsMachineUpdate = WsMachineStatusUpdate | WsHmiLoginUpdate;
