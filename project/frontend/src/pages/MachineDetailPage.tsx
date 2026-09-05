@@ -319,7 +319,6 @@ const TimelineChart = memo(function TimelineChart({ hourlyRows }: { hourlyRows: 
                       top: "3px",
                       bottom: "3px",
                       background: S[seg.status].color,
-                      borderRadius: "2px",
                       zIndex: 1,
                     }}
                   >

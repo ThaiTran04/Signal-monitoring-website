@@ -19,7 +19,7 @@ from sqlalchemy import func, and_
 from starlette.concurrency import run_in_threadpool
 
 from app.database.db import SessionLocal
-from app.models.models import Machine, MachineStatus, ConnectionHistory
+from app.models.models import Machine, MachineStatus, ConnectionHistory, HmiLoginHistory
 from app.websocket.manager import manager
 
 # ESP32 pushes every 1s (see esp32/main.cpp STATUS_PUSH_INTERVAL_MS). Was
@@ -90,7 +90,29 @@ def _find_newly_offline(now: datetime) -> list[dict]:
                 machine_id=m.id, connected_at=None, disconnected_at=now,
                 duration_min=None, reason="heartbeat_timeout",
             ))
-            newly_offline.append({"machine_id": m.id, "machine_name": m.machine_name})
+
+            # A disconnected panel can't have an operator "logged in" on it
+            # any more — if it comes back online later, the ESP32 boots
+            # straight to the LOGIN screen anyway (see esp32/main.cpp), so
+            # the badge would be lying in the meantime otherwise. Close out
+            # any open HMI session the same way device_hmi_logout() does.
+            hmi_login_changed = False
+            if m.hmi_login:
+                open_rows = (
+                    db.query(HmiLoginHistory)
+                    .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
+                    .all()
+                )
+                for row in open_rows:
+                    row.logout_at = now
+                m.hmi_login = False
+                hmi_login_changed = True
+
+            newly_offline.append({
+                "machine_id": m.id,
+                "machine_name": m.machine_name,
+                "hmi_login_changed": hmi_login_changed,
+            })
 
         if newly_offline:
             db.commit()
@@ -119,3 +141,11 @@ async def watch_offline_machines():
                 "status": "offline",
                 "timestamp": now.isoformat(),
             })
+            if entry["hmi_login_changed"]:
+                await manager.broadcast({
+                    "type": "hmi_login_update",
+                    "machine_id": entry["machine_id"],
+                    "machine_name": entry["machine_name"],
+                    "hmi_login": False,
+                    "timestamp": now.isoformat(),
+                })

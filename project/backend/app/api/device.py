@@ -79,8 +79,24 @@ def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetim
     db.add(IoHistory(machine_id=m.id, state=io_state, timestamp=now))
 
     # Track connect/disconnect transitions
+    hmi_login_changed = False
     if prev_status != "offline" and status == "offline":
         db.add(ConnectionHistory(machine_id=m.id, connected_at=None, disconnected_at=now, duration_min=None, reason="device_reported_offline"))
+        # Same reasoning as offline_watcher.py: a disconnected panel can't
+        # have an operator logged in on it, so clear the badge here too in
+        # case the ESP32 itself ever reports "OFFLINE" directly instead of
+        # just going silent (which offline_watcher.py's heartbeat timeout
+        # handles separately).
+        if m.hmi_login:
+            open_rows = (
+                db.query(HmiLoginHistory)
+                .filter(HmiLoginHistory.machine_id == m.id, HmiLoginHistory.logout_at.is_(None))
+                .all()
+            )
+            for row in open_rows:
+                row.logout_at = now
+            m.hmi_login = False
+            hmi_login_changed = True
     elif prev_status == "offline" and status != "offline":
         open_row = (
             db.query(ConnectionHistory)
@@ -105,6 +121,7 @@ def _write_device_update(db: Session, payload: DeviceUpdatePayload, now: datetim
         "io_input2": m.io_input2,
         "io_input3": m.io_input3,
         "io_input4": m.io_input4,
+        "hmi_login_changed": hmi_login_changed,
     }
 
 
@@ -133,6 +150,14 @@ async def device_update(payload: DeviceUpdatePayload, db: Session = Depends(get_
         "io_input4": result["io_input4"],
         "timestamp": now.isoformat(),
     })
+    if result["hmi_login_changed"]:
+        await manager.broadcast({
+            "type": "hmi_login_update",
+            "machine_id": result["machine_id"],
+            "machine_name": result["machine_name"],
+            "hmi_login": False,
+            "timestamp": now.isoformat(),
+        })
 
     return {"ok": True, "machine_id": result["machine_id"], "status": result["status"]}
 
